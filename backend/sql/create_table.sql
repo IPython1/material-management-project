@@ -111,7 +111,6 @@ create table if not exists inventory_approval
     applyTime      datetime default CURRENT_TIMESTAMP not null comment '提交时间',
     approveId      bigint                             null comment '审批人ID',
     approveTime    datetime                           null comment '审批时间',
-    outTime        datetime                           null comment '出库时间',
     approveRemark  varchar(255)                       null comment '审批意见',
     status         tinyint  default 0                 not null comment '审批状态：0待审批 1已通过 2已驳回 3已完成出库',
     createTime     datetime default CURRENT_TIMESTAMP not null comment '创建时间',
@@ -131,51 +130,9 @@ create table if not exists notice
     title      varchar(100)                       not null comment '标题',
     content    varchar(500)                       null comment '内容',
     noticeType tinyint                            not null comment '类型：1预警通知 2审批结果',
-    refId      bigint                             null comment '关联业务ID',
-    refType    tinyint                            null comment '关联业务类型：1审批 2预警',
     isRead     tinyint  default 0                 not null comment '是否已读：0未读 1已读',
     createTime datetime default CURRENT_TIMESTAMP not null comment '创建时间',
     index idx_userId (userId),
     index idx_noticeType (noticeType),
     index idx_isRead (isRead)
 ) comment '通知消息表' collate = utf8mb4_unicode_ci;
-
--- 预警规则表
-create table if not exists warn_rule
-(
-    id             bigint auto_increment comment '规则ID' primary key,
-    ruleName       varchar(100)                       not null comment '规则名称',
-    ruleType       tinyint                            not null comment '规则类型：1库存预警 2临期预警',
-    materialId     bigint                             null comment '物资ID（为空表示全局规则）',
-    thresholdValue int                                not null comment '阈值（库存值或临期天数）',
-    isEnabled      tinyint  default 1                 not null comment '是否启用：0停用 1启用',
-    createBy       bigint                             null comment '创建人ID',
-    createTime     datetime default CURRENT_TIMESTAMP not null comment '创建时间',
-    updateBy       bigint                             null comment '更新人ID',
-    updateTime     datetime default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP comment '更新时间',
-    isDelete       tinyint  default 0                 not null comment '逻辑删除：0未删 1已删',
-    index idx_ruleType (ruleType),
-    index idx_materialId (materialId),
-    index idx_isEnabled (isEnabled)
-) comment '预警规则表' collate = utf8mb4_unicode_ci;
-
--- 预警记录表
-create table if not exists warn_record
-(
-    id             bigint auto_increment comment '预警记录ID' primary key,
-    ruleId         bigint                             null comment '规则ID',
-    materialId     bigint                             not null comment '物资ID',
-    warnType       tinyint                            not null comment '预警类型：1库存预警 2临期预警',
-    currentValue   int                                not null comment '当前值（库存或剩余天数）',
-    thresholdValue int                                not null comment '阈值',
-    content        varchar(500)                       null comment '预警内容',
-    handled        tinyint  default 0                 not null comment '是否已处理：0未处理 1已处理',
-    handledBy      bigint                             null comment '处理人ID',
-    handledTime    datetime                           null comment '处理时间',
-    createTime     datetime default CURRENT_TIMESTAMP not null comment '创建时间',
-    updateTime     datetime default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP comment '更新时间',
-    index idx_ruleId (ruleId),
-    index idx_materialId (materialId),
-    index idx_warnType (warnType),
-    index idx_handled (handled)
-) comment '预警记录表' collate = utf8mb4_unicode_ci;

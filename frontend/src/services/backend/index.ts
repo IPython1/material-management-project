@@ -8,7 +8,6 @@ import * as postFavourController from './postFavourController';
 import * as postThumbController from './postThumbController';
 import * as userController from './userController';
 import * as wxMpController from './wxMpController';
-import * as materialManagementController from './materialManagementController';
 export default {
   wxMpController,
   fileController,
@@ -16,5 +15,4 @@ export default {
   postFavourController,
   postThumbController,
   userController,
-  materialManagementController,
 };
