@@ -23,6 +23,20 @@ export default [
     component: './WarnNotice',
   },
   {
+    path: '/material',
+    icon: 'appstore',
+    name: '物资管理',
+    access: 'canUser',
+    component: './Material',
+  },
+  {
+    path: '/stock',
+    icon: 'database',
+    name: '库存管理',
+    access: 'canUser',
+    component: './Stock',
+  },
+  {
     path: '/admin',
     icon: 'crown',
     name: '管理页',

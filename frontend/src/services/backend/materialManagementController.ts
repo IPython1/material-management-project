@@ -121,6 +121,44 @@ export type ReportTurnoverVO = {
   turnoverRate?: number;
 };
 
+export type MaterialVO = {
+  id?: string;
+  materialName?: string;
+  category?: string;
+  location?: string;
+  expireDate?: string;
+  stockTotal?: number;
+  status?: number;
+  createTime?: string;
+  updateTime?: string;
+};
+
+export type StockAdjustRequest = {
+  materialId: number;
+  location?: string;
+  adjustAmount: number;
+  remark?: string;
+};
+
+export type DashboardStatVO = {
+  materialCount?: number;
+  totalStock?: number;
+  todayApplyCount?: number;
+  pendingApplyCount?: number;
+  unhandledWarnCount?: number;
+};
+
+export type DashboardTrendItemVO = {
+  date?: string;
+  applyCount?: number;
+  outQuantity?: number;
+};
+
+export type DashboardPieItemVO = {
+  category?: string;
+  value?: number;
+};
+
 export async function createApplyUsingPost(
   body: {
     materialId: number;
@@ -379,3 +417,179 @@ export function getReportExportUrl(reportType: 'stock' | 'flow' | 'usage' | 'tur
   }
   return `/api/report/export?${query.toString()}`;
 }
+
+export async function listMaterialUsingGet(
+  params: {
+    current?: number;
+    pageSize?: number;
+    materialName?: string;
+    category?: string;
+    status?: number;
+  },
+  options?: { [key: string]: any },
+) {
+  return request<BaseResponse<PageResult<MaterialVO>>>('/api/material/list', {
+    method: 'GET',
+    params: {
+      ...params,
+    },
+    ...(options || {}),
+  });
+}
+
+export async function saveMaterialUsingPost(
+  body: {
+    id?: number;
+    materialName: string;
+    category?: string;
+    location?: string;
+    expireDate?: string;
+    status?: number;
+  },
+  options?: { [key: string]: any },
+) {
+  return request<BaseResponse<string>>('/api/material/save', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    data: body,
+    ...(options || {}),
+  });
+}
+
+export async function deleteMaterialUsingPost(
+  body: {
+    id: number;
+  },
+  options?: { [key: string]: any },
+) {
+  return request<BaseResponse<boolean>>('/api/material/delete', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    data: body,
+    ...(options || {}),
+  });
+}
+
+export async function getMaterialDetailUsingGet(id: string, options?: { [key: string]: any }) {
+  return request<BaseResponse<MaterialVO>>('/api/material/detail', {
+    method: 'GET',
+    params: {
+      id,
+    },
+    ...(options || {}),
+  });
+}
+
+export async function listStockUsingGet(
+  params: {
+    current?: number;
+    pageSize?: number;
+    materialName?: string;
+    category?: string;
+  },
+  options?: { [key: string]: any },
+) {
+  return request<BaseResponse<PageResult<ReportStockVO>>>('/api/stock/list', {
+    method: 'GET',
+    params: {
+      ...params,
+    },
+    ...(options || {}),
+  });
+}
+
+export async function getStockDetailUsingGet(materialId: number, options?: { [key: string]: any }) {
+  return request<BaseResponse<ReportStockVO>>('/api/stock/detail', {
+    method: 'GET',
+    params: {
+      materialId,
+    },
+    ...(options || {}),
+  });
+}
+
+export async function adjustStockUsingPost(body: StockAdjustRequest, options?: { [key: string]: any }) {
+  return request<BaseResponse<boolean>>('/api/stock/adjust', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    data: body,
+    ...(options || {}),
+  });
+}
+
+export async function listFlowUsingGet(
+  params: {
+    current?: number;
+    pageSize?: number;
+    materialName?: string;
+    startTime?: string;
+    endTime?: string;
+  },
+  options?: { [key: string]: any },
+) {
+  return request<BaseResponse<PageResult<ReportFlowVO>>>('/api/flow/list', {
+    method: 'GET',
+    params: {
+      ...params,
+    },
+    ...(options || {}),
+  });
+}
+
+export async function getDashboardStatUsingGet(options?: { [key: string]: any }) {
+  return request<BaseResponse<DashboardStatVO>>('/api/dashboard/stat', {
+    method: 'GET',
+    ...(options || {}),
+  });
+}
+
+export async function getDashboardTrendUsingGet(options?: { [key: string]: any }) {
+  return request<BaseResponse<DashboardTrendItemVO[]>>('/api/dashboard/trend', {
+    method: 'GET',
+    ...(options || {}),
+  });
+}
+
+export async function getDashboardPieUsingGet(options?: { [key: string]: any }) {
+  return request<BaseResponse<DashboardPieItemVO[]>>('/api/dashboard/pie', {
+    method: 'GET',
+    ...(options || {}),
+  });
+}
+
+export async function getDashboardTodoUsingGet(
+  params?: {
+    pageSize?: number;
+  },
+  options?: { [key: string]: any },
+) {
+  return request<BaseResponse<PageResult<ApplyVO>>>('/api/dashboard/todo', {
+    method: 'GET',
+    params: {
+      ...(params || {}),
+    },
+    ...(options || {}),
+  });
+}
+
+export async function getDashboardWarnUsingGet(
+  params?: {
+    pageSize?: number;
+  },
+  options?: { [key: string]: any },
+) {
+  return request<BaseResponse<PageResult<WarnVO>>>('/api/dashboard/warn', {
+    method: 'GET',
+    params: {
+      ...(params || {}),
+    },
+    ...(options || {}),
+  });
+}
+

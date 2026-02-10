@@ -1,162 +1,178 @@
-import { PageContainer } from '@ant-design/pro-components';
+import { PageContainer, ProColumns, ProTable } from '@ant-design/pro-components';
 import { useModel } from '@umijs/max';
-import { Card, theme } from 'antd';
-import React from 'react';
-
-/**
- * 每个单独的卡片，为了复用样式抽成了组件
- * @param param0
- * @returns
- */
-const InfoCard: React.FC<{
-  title: string;
-  index: number;
-  desc: string;
-  href: string;
-}> = ({ title, href, index, desc }) => {
-  const { useToken } = theme;
-
-  const { token } = useToken();
-
-  return (
-    <div
-      style={{
-        backgroundColor: token.colorBgContainer,
-        boxShadow: token.boxShadow,
-        borderRadius: '8px',
-        fontSize: '14px',
-        color: token.colorTextSecondary,
-        lineHeight: '22px',
-        padding: '16px 19px',
-        minWidth: '220px',
-        flex: 1,
-      }}
-    >
-      <div
-        style={{
-          display: 'flex',
-          gap: '4px',
-          alignItems: 'center',
-        }}
-      >
-        <div
-          style={{
-            width: 48,
-            height: 48,
-            lineHeight: '22px',
-            backgroundSize: '100%',
-            textAlign: 'center',
-            padding: '8px 16px 16px 12px',
-            color: '#FFF',
-            fontWeight: 'bold',
-            backgroundImage:
-              "url('https://gw.alipayobjects.com/zos/bmw-prod/daaf8d50-8e6d-4251-905d-676a24ddfa12.svg')",
-          }}
-        >
-          {index}
-        </div>
-        <div
-          style={{
-            fontSize: '16px',
-            color: token.colorText,
-            paddingBottom: 8,
-          }}
-        >
-          {title}
-        </div>
-      </div>
-      <div
-        style={{
-          fontSize: '14px',
-          color: token.colorTextSecondary,
-          textAlign: 'justify',
-          lineHeight: '22px',
-          marginBottom: 8,
-        }}
-      >
-        {desc}
-      </div>
-      <a href={href} target="_blank" rel="noreferrer">
-        了解更多 {'>'}
-      </a>
-    </div>
-  );
-};
+import {
+  DashboardPieItemVO,
+  DashboardTrendItemVO,
+  getDashboardPieUsingGet,
+  getDashboardStatUsingGet,
+  getDashboardTodoUsingGet,
+  getDashboardTrendUsingGet,
+  getDashboardWarnUsingGet,
+  ApplyVO,
+  WarnVO,
+} from '@/services/backend/materialManagementController';
+import { Card, Col, Progress, Row, Statistic, Table, theme } from 'antd';
+import React, { useEffect, useState } from 'react';
 
 const Welcome: React.FC = () => {
   const { token } = theme.useToken();
   const { initialState } = useModel('@@initialState');
+  const [stat, setStat] = useState<{
+    materialCount?: number;
+    totalStock?: number;
+    todayApplyCount?: number;
+    pendingApplyCount?: number;
+    unhandledWarnCount?: number;
+  }>({});
+  const [trend, setTrend] = useState<DashboardTrendItemVO[]>([]);
+  const [pie, setPie] = useState<DashboardPieItemVO[]>([]);
+  const [todo, setTodo] = useState<ApplyVO[]>([]);
+  const [warn, setWarn] = useState<WarnVO[]>([]);
+
+  useEffect(() => {
+    (async () => {
+      const [statRes, trendRes, pieRes, todoRes, warnRes] = await Promise.all([
+        getDashboardStatUsingGet(),
+        getDashboardTrendUsingGet(),
+        getDashboardPieUsingGet(),
+        getDashboardTodoUsingGet({ pageSize: 5 }),
+        getDashboardWarnUsingGet({ pageSize: 5 }),
+      ]);
+      if (statRes.code === 0) {
+        setStat(statRes.data || {});
+      }
+      if (trendRes.code === 0) {
+        setTrend(trendRes.data || []);
+      }
+      if (pieRes.code === 0) {
+        setPie(pieRes.data || []);
+      }
+      if (todoRes.code === 0) {
+        setTodo(todoRes.data?.records || []);
+      }
+      if (warnRes.code === 0) {
+        setWarn(warnRes.data?.records || []);
+      }
+    })();
+  }, []);
+
+  const trendColumns: ProColumns<DashboardTrendItemVO>[] = [
+    { title: '日期', dataIndex: 'date' },
+    { title: '申请单数', dataIndex: 'applyCount' },
+    { title: '出库总量', dataIndex: 'outQuantity' },
+  ];
+
+  const todoColumns: ProColumns<ApplyVO>[] = [
+    { title: '申请单号', dataIndex: 'approvalNo' },
+    { title: '物资', dataIndex: 'materialName' },
+    { title: '数量', dataIndex: 'quantity' },
+    { title: '申请人', dataIndex: 'applicantName' },
+    { title: '申请时间', dataIndex: 'applyTime', valueType: 'dateTime' },
+  ];
+
+  const warnColumns: ProColumns<WarnVO>[] = [
+    { title: '物资', dataIndex: 'materialName' },
+    { title: '类型', dataIndex: 'warnTypeText' },
+    { title: '当前值', dataIndex: 'currentValue' },
+    { title: '阈值', dataIndex: 'thresholdValue' },
+    { title: '时间', dataIndex: 'createTime', valueType: 'dateTime' },
+  ];
+
   return (
     <PageContainer>
-      <Card
-        style={{
-          borderRadius: 8,
-        }}
-        bodyStyle={{
-          backgroundImage:
-            initialState?.settings?.navTheme === 'realDark'
-              ? 'background-image: linear-gradient(75deg, #1A1B1F 0%, #191C1F 100%)'
-              : 'background-image: linear-gradient(75deg, #FBFDFF 0%, #F5F7FF 100%)',
-        }}
-      >
-        <div
-          style={{
-            backgroundPosition: '100% -30%',
-            backgroundRepeat: 'no-repeat',
-            backgroundSize: '274px auto',
-            backgroundImage:
-              "url('https://gw.alipayobjects.com/mdn/rms_a9745b/afts/img/A*BuFmQqsB2iAAAAAAAAAAAAAAARQnAQ')",
-          }}
-        >
-          <div
-            style={{
-              fontSize: '20px',
-              color: token.colorTextHeading,
-            }}
+      <Row gutter={[16, 16]}>
+        <Col xs={24} sm={12} md={6}>
+          <Card bordered={false}>
+            <Statistic title="物资总数" value={stat.materialCount ?? 0} />
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} md={6}>
+          <Card bordered={false}>
+            <Statistic title="库存总量" value={stat.totalStock ?? 0} />
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} md={6}>
+          <Card bordered={false}>
+            <Statistic title="今日申请" value={stat.todayApplyCount ?? 0} />
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} md={6}>
+          <Card bordered={false}>
+            <Statistic title="待审批" value={stat.pendingApplyCount ?? 0} />
+          </Card>
+        </Col>
+      </Row>
+
+      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+        <Col xs={24} md={16}>
+          <Card
+            title="近 7 天申请与出库趋势"
+            bordered={false}
+            bodyStyle={{ padding: 0, paddingTop: 16, paddingBottom: 16 }}
           >
-            欢迎使用 Ant Design Pro
-          </div>
-          <p
-            style={{
-              fontSize: '14px',
-              color: token.colorTextSecondary,
-              lineHeight: '22px',
-              marginTop: 16,
-              marginBottom: 32,
-              width: '65%',
-            }}
-          >
-            Ant Design Pro 是一个整合了 umi，Ant Design 和 ProComponents
-            的脚手架方案。致力于在设计规范和基础组件的基础上，继续向上构建，提炼出典型模板/业务组件/配套设计资源，进一步提升企业级中后台产品设计研发过程中的『用户』和『设计者』的体验。
-          </p>
-          <div
-            style={{
-              display: 'flex',
-              flexWrap: 'wrap',
-              gap: 16,
-            }}
-          >
-            <InfoCard
-              index={1}
-              href="https://umijs.org/docs/introduce/introduce"
-              title="了解 umi"
-              desc="umi 是一个可扩展的企业级前端应用框架,umi 以路由为基础的，同时支持配置式路由和约定式路由，保证路由的功能完备，并以此进行功能扩展。"
+            <ProTable<DashboardTrendItemVO>
+              search={false}
+              options={false}
+              toolBarRender={false}
+              rowKey="date"
+              pagination={false}
+              dataSource={trend}
+              columns={trendColumns}
+              size="small"
             />
-            <InfoCard
-              index={2}
-              title="了解 ant design"
-              href="https://ant.design"
-              desc="antd 是基于 Ant Design 设计体系的 React UI 组件库，主要用于研发企业级中后台产品。"
+          </Card>
+        </Col>
+        <Col xs={24} md={8}>
+          <Card title="按分类库存占比" bordered={false}>
+            {pie.length === 0 ? (
+              <div style={{ color: token.colorTextSecondary }}>暂无数据</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {pie.map((item) => (
+                  <div key={item.category} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ flex: '0 0 80px' }}>{item.category}</span>
+                    <Progress
+                      percent={item.value && stat.totalStock ? Math.round((item.value / (stat.totalStock || 1)) * 100) : 0}
+                      showInfo
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+        </Col>
+      </Row>
+
+      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+        <Col xs={24} md={12}>
+          <Card title="待审批列表" bordered={false}>
+            <ProTable<ApplyVO>
+              search={false}
+              options={false}
+              toolBarRender={false}
+              rowKey="id"
+              pagination={false}
+              dataSource={todo}
+              columns={todoColumns}
+              size="small"
             />
-            <InfoCard
-              index={3}
-              title="了解 Pro Components"
-              href="https://procomponents.ant.design"
-              desc="ProComponents 是一个基于 Ant Design 做了更高抽象的模板组件，以 一个组件就是一个页面为开发理念，为中后台开发带来更好的体验。"
+          </Card>
+        </Col>
+        <Col xs={24} md={12}>
+          <Card title="预警列表" bordered={false}>
+            <ProTable<WarnVO>
+              search={false}
+              options={false}
+              toolBarRender={false}
+              rowKey="id"
+              pagination={false}
+              dataSource={warn}
+              columns={warnColumns}
+              size="small"
             />
-          </div>
-        </div>
-      </Card>
+          </Card>
+        </Col>
+      </Row>
     </PageContainer>
   );
 };
