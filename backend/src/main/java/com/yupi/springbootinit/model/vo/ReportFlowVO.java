@@ -36,11 +36,6 @@ public class ReportFlowVO implements Serializable {
     private String flowType;
 
     /**
-     * 业务类型
-     */
-    private String bizType;
-
-    /**
      * 数量
      */
     private Integer quantity;

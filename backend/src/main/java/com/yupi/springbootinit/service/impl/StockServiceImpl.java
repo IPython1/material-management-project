@@ -10,16 +10,21 @@ import com.yupi.springbootinit.mapper.MaterialInfoMapper;
 import com.yupi.springbootinit.model.dto.report.ReportFlowQueryRequest;
 import com.yupi.springbootinit.model.dto.report.ReportStockQueryRequest;
 import com.yupi.springbootinit.model.dto.stock.StockAdjustRequest;
+import com.yupi.springbootinit.model.dto.stock.StockSaveRequest;
+import com.yupi.springbootinit.mapper.StockFlowMapper;
 import com.yupi.springbootinit.model.entity.InventoryInfo;
 import com.yupi.springbootinit.model.entity.MaterialInfo;
+import com.yupi.springbootinit.model.entity.StockFlow;
 import com.yupi.springbootinit.model.entity.User;
 import com.yupi.springbootinit.model.vo.ReportFlowVO;
 import com.yupi.springbootinit.model.vo.ReportStockVO;
 import com.yupi.springbootinit.service.ReportService;
 import com.yupi.springbootinit.service.StockService;
 import com.yupi.springbootinit.service.WarnService;
+import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.List;
+import java.util.Random;
 import java.util.stream.Collectors;
 import javax.annotation.Resource;
 import org.apache.commons.lang3.StringUtils;
@@ -31,6 +36,7 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class StockServiceImpl implements StockService {
+    private static final Random RANDOM = new Random();
 
     @Resource
     private ReportService reportService;
@@ -43,6 +49,9 @@ public class StockServiceImpl implements StockService {
 
     @Resource
     private WarnService warnService;
+
+    @Resource
+    private StockFlowMapper stockFlowMapper;
 
     @Override
     public Page<ReportStockVO> listStock(ReportStockQueryRequest queryRequest) {
@@ -129,16 +138,21 @@ public class StockServiceImpl implements StockService {
             throw new BusinessException(ErrorCode.OPERATION_ERROR, "库存调整失败");
         }
 
+        // 记录出入库流水
+        StockFlow stockFlow = new StockFlow();
+        stockFlow.setMaterialId(materialId);
+        stockFlow.setFlowType(adjustAmount > 0 ? "MANUAL_IN" : "MANUAL_OUT");
+        stockFlow.setQuantity(Math.abs(adjustAmount));
+        stockFlow.setBeforeStock(currentStock);
+        stockFlow.setAfterStock(newStock);
+        stockFlow.setOperatorId(operator.getId());
+        stockFlow.setRelatedApprovalNo(generateFlowNo());
+        stockFlow.setRemark(stockAdjustRequest.getRemark());
+        stockFlow.setCreateTime(new Date());
+        stockFlowMapper.insert(stockFlow);
+
         // 回写物资总库存
-        QueryWrapper<InventoryInfo> sumQuery = new QueryWrapper<>();
-        sumQuery.eq("materialId", materialId);
-        List<InventoryInfo> inventoryList = inventoryInfoMapper.selectList(sumQuery);
-        int totalStock = inventoryList.stream()
-                .map(InventoryInfo::getCurrentStock)
-                .filter(value -> value != null && value > 0)
-                .reduce(0, Integer::sum);
-        materialInfo.setStockTotal(totalStock);
-        materialInfoMapper.updateById(materialInfo);
+        int totalStock = recalculateMaterialTotalStock(materialId);
 
         // 同步预警
         warnService.syncStockWarnForMaterial(materialId, totalStock);
@@ -146,8 +160,112 @@ public class StockServiceImpl implements StockService {
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Boolean saveStock(StockSaveRequest stockSaveRequest, User operator) {
+        if (stockSaveRequest == null || stockSaveRequest.getMaterialId() == null || stockSaveRequest.getMaterialId() <= 0) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR);
+        }
+        if (stockSaveRequest.getWarnThreshold() != null && stockSaveRequest.getWarnThreshold() < 0) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "预警阈值不能小于 0");
+        }
+        Long materialId = stockSaveRequest.getMaterialId();
+        MaterialInfo materialInfo = materialInfoMapper.selectById(materialId);
+        if (materialInfo == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND_ERROR, "物资不存在");
+        }
+        QueryWrapper<InventoryInfo> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("materialId", materialId);
+        queryWrapper.orderByAsc("id");
+        List<InventoryInfo> inventoryInfoList = inventoryInfoMapper.selectList(queryWrapper);
+        Date now = new Date();
+        if (inventoryInfoList == null || inventoryInfoList.isEmpty()) {
+            InventoryInfo inventoryInfo = new InventoryInfo();
+            inventoryInfo.setMaterialId(materialId);
+            inventoryInfo.setLocation(StringUtils.defaultIfBlank(stockSaveRequest.getLocation(), materialInfo.getLocation()));
+            inventoryInfo.setCurrentStock(0);
+            inventoryInfo.setWarnThreshold(stockSaveRequest.getWarnThreshold() == null ? 0 : stockSaveRequest.getWarnThreshold());
+            inventoryInfo.setCreateTime(now);
+            inventoryInfo.setUpdateTime(now);
+            inventoryInfoMapper.insert(inventoryInfo);
+        } else {
+            InventoryInfo firstInventory = inventoryInfoList.get(0);
+            boolean needUpdateFirst = false;
+            if (StringUtils.isNotBlank(stockSaveRequest.getLocation())) {
+                firstInventory.setLocation(stockSaveRequest.getLocation());
+                needUpdateFirst = true;
+            }
+            if (stockSaveRequest.getWarnThreshold() != null) {
+                firstInventory.setWarnThreshold(stockSaveRequest.getWarnThreshold());
+                needUpdateFirst = true;
+                // 保持同一物资的阈值一致
+                for (int i = 1; i < inventoryInfoList.size(); i++) {
+                    InventoryInfo inventoryInfo = inventoryInfoList.get(i);
+                    inventoryInfo.setWarnThreshold(stockSaveRequest.getWarnThreshold());
+                    inventoryInfo.setUpdateTime(now);
+                    inventoryInfoMapper.updateById(inventoryInfo);
+                }
+            }
+            if (needUpdateFirst) {
+                firstInventory.setUpdateTime(now);
+                inventoryInfoMapper.updateById(firstInventory);
+            }
+        }
+        if (StringUtils.isNotBlank(stockSaveRequest.getLocation())) {
+            materialInfo.setLocation(stockSaveRequest.getLocation());
+        }
+        materialInfo.setUpdateTime(now);
+        materialInfoMapper.updateById(materialInfo);
+        int totalStock = recalculateMaterialTotalStock(materialId);
+        warnService.syncStockWarnForMaterial(materialId, totalStock);
+        return true;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Boolean deleteStock(Long materialId, User operator) {
+        if (materialId == null || materialId <= 0) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR);
+        }
+        MaterialInfo materialInfo = materialInfoMapper.selectById(materialId);
+        if (materialInfo == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND_ERROR, "物资不存在");
+        }
+        QueryWrapper<InventoryInfo> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("materialId", materialId);
+        inventoryInfoMapper.delete(queryWrapper);
+        materialInfo.setStockTotal(0);
+        materialInfo.setUpdateTime(new Date());
+        materialInfoMapper.updateById(materialInfo);
+        warnService.syncStockWarnForMaterial(materialId, 0);
+        return true;
+    }
+
+    @Override
     public Page<ReportFlowVO> listFlow(ReportFlowQueryRequest queryRequest) {
         return reportService.getFlowReport(queryRequest);
+    }
+
+    private int recalculateMaterialTotalStock(Long materialId) {
+        QueryWrapper<InventoryInfo> sumQuery = new QueryWrapper<>();
+        sumQuery.eq("materialId", materialId);
+        List<InventoryInfo> inventoryList = inventoryInfoMapper.selectList(sumQuery);
+        int totalStock = inventoryList.stream()
+                .map(InventoryInfo::getCurrentStock)
+                .filter(value -> value != null && value > 0)
+                .reduce(0, Integer::sum);
+        MaterialInfo materialInfo = materialInfoMapper.selectById(materialId);
+        if (materialInfo != null) {
+            materialInfo.setStockTotal(totalStock);
+            materialInfo.setUpdateTime(new Date());
+            materialInfoMapper.updateById(materialInfo);
+        }
+        return totalStock;
+    }
+
+    private String generateFlowNo() {
+        String timePart = new SimpleDateFormat("yyyyMMddHHmmss").format(new Date());
+        int randomPart = 1000 + RANDOM.nextInt(9000);
+        return "FL" + timePart + randomPart;
     }
 }
 

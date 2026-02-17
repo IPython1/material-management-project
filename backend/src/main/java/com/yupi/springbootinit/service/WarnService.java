@@ -19,6 +19,11 @@ public interface WarnService {
     Page<WarnVO> listWarn(WarnQueryRequest warnQueryRequest);
 
     /**
+     * 预警列表（按用户权限过滤）
+     */
+    Page<WarnVO> listWarn(WarnQueryRequest warnQueryRequest, User loginUser);
+
+    /**
      * 预警规则列表
      */
     List<WarnRuleVO> listWarnRule();
@@ -34,6 +39,11 @@ public interface WarnService {
     Boolean markWarnHandled(Long warnRecordId, User loginUser);
 
     /**
+     * 提醒管理员处理预警
+     */
+    Boolean remindWarn(Long warnRecordId, User loginUser);
+
+    /**
      * 按规则执行预警扫描并落库
      */
     void syncWarnRecordsByRules();
@@ -42,4 +52,9 @@ public interface WarnService {
      * 指定物资库存变化后执行预警
      */
     void syncStockWarnForMaterial(Long materialId, Integer currentStock);
+
+    /**
+     * 获取未处理预警数量
+     */
+    Long countUnhandled();
 }

@@ -39,12 +39,12 @@ public class WarnController {
     private UserService userService;
 
     /**
-     * 预警列表（管理员）
+     * 预警列表（管理员可看全部，普通用户仅看自己的）
      */
     @GetMapping("/list")
-    @AuthCheck(mustRole = UserConstant.ADMIN_ROLE)
-    public BaseResponse<Page<WarnVO>> listWarn(WarnQueryRequest warnQueryRequest) {
-        return ResultUtils.success(warnService.listWarn(warnQueryRequest));
+    public BaseResponse<Page<WarnVO>> listWarn(WarnQueryRequest warnQueryRequest, HttpServletRequest request) {
+        User loginUser = userService.getLoginUser(request);
+        return ResultUtils.success(warnService.listWarn(warnQueryRequest, loginUser));
     }
 
     /**
@@ -78,5 +78,22 @@ public class WarnController {
     public BaseResponse<Boolean> markWarnHandled(@PathVariable("id") Long id, HttpServletRequest request) {
         User loginUser = userService.getLoginUser(request);
         return ResultUtils.success(warnService.markWarnHandled(id, loginUser));
+    }
+
+    /**
+     * 提醒管理员处理预警（普通用户）
+     */
+    @PostMapping("/{id}/remind")
+    public BaseResponse<Boolean> remindWarn(@PathVariable("id") Long id, HttpServletRequest request) {
+        User loginUser = userService.getLoginUser(request);
+        return ResultUtils.success(warnService.remindWarn(id, loginUser));
+    }
+
+    /**
+     * 获取未处理预警数量（用于导航栏角标）
+     */
+    @GetMapping("/unhandled/count")
+    public BaseResponse<Long> countUnhandled() {
+        return ResultUtils.success(warnService.countUnhandled());
     }
 }

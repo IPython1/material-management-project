@@ -1,7 +1,10 @@
 import Footer from '@/components/Footer';
+import { getDashboardStatUsingGet } from '@/services/backend/materialManagementController';
 import { getLoginUserUsingGet } from '@/services/backend/userController';
+import { countUnhandledWarnUsingGet } from '@/services/backend/warnController';
 import type { RunTimeLayoutConfig } from '@umijs/max';
 import { history } from '@umijs/max';
+import { Badge } from 'antd';
 import defaultSettings from '../config/defaultSettings';
 import { AvatarDropdown } from './components/RightContent/AvatarDropdown';
 import { requestConfig } from './requestConfig';
@@ -14,6 +17,8 @@ const loginPath = '/user/login';
 export async function getInitialState(): Promise<InitialState> {
   const initialState: InitialState = {
     currentUser: undefined,
+    unhandledWarnCount: 0,
+    pendingApplyCount: 0,
   };
   // 如果不是登录页面，执行
   const { location } = history;
@@ -24,14 +29,18 @@ export async function getInitialState(): Promise<InitialState> {
     } catch (error: any) {
       // 如果未登录
     }
-
-    // 模拟登录用户
-    // const mockUser: API.LoginUserVO = {
-    //   userAvatar: 'https://gw.alipayobjects.com/zos/rmsportal/BiazfanxmamNRoxxVxka.png',
-    //   userName: 'yupi',
-    //   userRole: 'admin',
-    // };
-    // initialState.currentUser = mockUser;
+    try {
+      const warnRes = await countUnhandledWarnUsingGet();
+      initialState.unhandledWarnCount = warnRes.data ?? 0;
+    } catch (_) {
+      // 忽略预警计数加载失败
+    }
+    try {
+      const statRes = await getDashboardStatUsingGet();
+      initialState.pendingApplyCount = statRes.data?.pendingApplyCount ?? 0;
+    } catch (_) {
+      // 忽略待审批计数加载失败
+    }
   }
   return initialState;
 }
@@ -50,8 +59,33 @@ export const layout: RunTimeLayoutConfig = ({ initialState }) => {
     },
     footerRender: () => <Footer />,
     menuHeaderRender: undefined,
-    // 自定义 403 页面
-    // unAccessible: <div>unAccessible</div>,
+    menuItemRender: (menuItemProps: any, defaultDom: any) => {
+      if (menuItemProps.path === '/notice') {
+        const count = initialState?.unhandledWarnCount ?? 0;
+        return (
+          <a href={menuItemProps.path} onClick={(e) => { e.preventDefault(); history.push(menuItemProps.path || '/notice'); }}>
+            <Badge count={count} size="small" offset={[6, 0]}>
+              {defaultDom}
+            </Badge>
+          </a>
+        );
+      }
+      if (menuItemProps.path === '/apply' && initialState?.currentUser?.userRole === 'admin') {
+        const count = initialState?.pendingApplyCount ?? 0;
+        return (
+          <a href={menuItemProps.path} onClick={(e) => { e.preventDefault(); history.push(menuItemProps.path || '/apply'); }}>
+            <Badge count={count} size="small" offset={[6, 0]}>
+              {defaultDom}
+            </Badge>
+          </a>
+        );
+      }
+      return (
+        <a href={menuItemProps.path} onClick={(e) => { e.preventDefault(); history.push(menuItemProps.path || '/'); }}>
+          {defaultDom}
+        </a>
+      );
+    },
     ...defaultSettings,
   };
 };

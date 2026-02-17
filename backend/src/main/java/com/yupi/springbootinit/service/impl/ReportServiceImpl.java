@@ -4,10 +4,13 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.yupi.springbootinit.common.ErrorCode;
 import com.yupi.springbootinit.constant.ApprovalConstant;
+import com.yupi.springbootinit.constant.CommonConstant;
 import com.yupi.springbootinit.exception.BusinessException;
 import com.yupi.springbootinit.mapper.InventoryApprovalMapper;
 import com.yupi.springbootinit.mapper.InventoryInfoMapper;
 import com.yupi.springbootinit.mapper.MaterialInfoMapper;
+import com.yupi.springbootinit.mapper.StockFlowMapper;
+import com.yupi.springbootinit.model.entity.StockFlow;
 import com.yupi.springbootinit.model.dto.report.ReportFlowQueryRequest;
 import com.yupi.springbootinit.model.dto.report.ReportStockQueryRequest;
 import com.yupi.springbootinit.model.dto.report.ReportTurnoverQueryRequest;
@@ -58,6 +61,9 @@ public class ReportServiceImpl implements ReportService {
     @Resource
     private UserService userService;
 
+    @Resource
+    private StockFlowMapper stockFlowMapper;
+
     @Override
     public Page<ReportStockVO> getStockReport(ReportStockQueryRequest reportStockQueryRequest) {
         ReportStockQueryRequest queryRequest = reportStockQueryRequest == null ? new ReportStockQueryRequest()
@@ -66,7 +72,14 @@ public class ReportServiceImpl implements ReportService {
         materialQueryWrapper.like(StringUtils.isNotBlank(queryRequest.getMaterialName()), "materialName",
                 queryRequest.getMaterialName());
         materialQueryWrapper.eq(StringUtils.isNotBlank(queryRequest.getCategory()), "category", queryRequest.getCategory());
-        materialQueryWrapper.orderByDesc("updateTime");
+        String sortField = queryRequest.getSortField();
+        String sortOrder = queryRequest.getSortOrder();
+        if (StringUtils.isNotBlank(sortField) && isValidMaterialSortField(sortField)) {
+            boolean isAsc = CommonConstant.SORT_ORDER_ASC.equals(sortOrder);
+            materialQueryWrapper.orderBy(true, isAsc, sortField);
+        } else {
+            materialQueryWrapper.orderByAsc("id");
+        }
         Page<MaterialInfo> materialPage = materialInfoMapper.selectPage(
                 new Page<>(queryRequest.getCurrent(), queryRequest.getPageSize()), materialQueryWrapper);
 
@@ -101,6 +114,10 @@ public class ReportServiceImpl implements ReportService {
             reportStockVOList.add(reportStockVO);
         }
 
+        if (StringUtils.isNotBlank(sortField) && isValidStockComputedSortField(sortField)) {
+            sortReportStockList(reportStockVOList, sortField, sortOrder);
+        }
+
         Page<ReportStockVO> voPage = new Page<>(materialPage.getCurrent(), materialPage.getSize(), materialPage.getTotal());
         voPage.setRecords(reportStockVOList);
         return voPage;
@@ -110,14 +127,9 @@ public class ReportServiceImpl implements ReportService {
     public Page<ReportFlowVO> getFlowReport(ReportFlowQueryRequest reportFlowQueryRequest) {
         ReportFlowQueryRequest queryRequest = reportFlowQueryRequest == null ? new ReportFlowQueryRequest()
                 : reportFlowQueryRequest;
-        QueryWrapper<InventoryApproval> queryWrapper = new QueryWrapper<>();
-        queryWrapper.eq("status", ApprovalConstant.STATUS_OUTBOUND);
-
         Date startTime = parseDate(queryRequest.getStartTime());
         Date endTime = parseDate(queryRequest.getEndTime());
-        queryWrapper.ge(startTime != null, "outTime", startTime);
-        queryWrapper.le(endTime != null, "outTime", endTime);
-
+        Set<Long> materialIdFilterSet = null;
         if (StringUtils.isNotBlank(queryRequest.getMaterialName())) {
             QueryWrapper<MaterialInfo> materialQueryWrapper = new QueryWrapper<>();
             materialQueryWrapper.like("materialName", queryRequest.getMaterialName());
@@ -125,41 +137,55 @@ public class ReportServiceImpl implements ReportService {
             if (materialInfoList == null || materialInfoList.isEmpty()) {
                 return new Page<>(queryRequest.getCurrent(), queryRequest.getPageSize(), 0);
             }
-            queryWrapper.in("materialId", materialInfoList.stream().map(MaterialInfo::getId).collect(Collectors.toSet()));
-        }
-        queryWrapper.orderByDesc("outTime");
-
-        Page<InventoryApproval> approvalPage = inventoryApprovalMapper.selectPage(
-                new Page<>(queryRequest.getCurrent(), queryRequest.getPageSize()), queryWrapper);
-        if (approvalPage.getRecords() == null || approvalPage.getRecords().isEmpty()) {
-            return new Page<>(approvalPage.getCurrent(), approvalPage.getSize(), approvalPage.getTotal());
+            materialIdFilterSet = materialInfoList.stream().map(MaterialInfo::getId).collect(Collectors.toSet());
         }
 
-        Set<Long> materialIdSet = approvalPage.getRecords().stream().map(InventoryApproval::getMaterialId).collect(Collectors.toSet());
-        Set<Long> operatorIdSet = approvalPage.getRecords().stream().map(InventoryApproval::getApproveId).collect(Collectors.toSet());
-        Map<Long, String> materialNameMap = materialInfoMapper.selectBatchIds(materialIdSet).stream()
-                .collect(Collectors.toMap(MaterialInfo::getId, MaterialInfo::getMaterialName));
-        Map<Long, String> operatorNameMap = userService.listByIds(operatorIdSet).stream()
-                .collect(Collectors.toMap(User::getId, user -> StringUtils.defaultIfBlank(user.getUserName(), user.getUserAccount())));
+        QueryWrapper<StockFlow> stockFlowQuery = new QueryWrapper<>();
+        stockFlowQuery.ge(startTime != null, "createTime", startTime);
+        stockFlowQuery.le(endTime != null, "createTime", endTime);
+        stockFlowQuery.eq(StringUtils.isNotBlank(queryRequest.getFlowType()), "flowType", queryRequest.getFlowType());
+        stockFlowQuery.in(materialIdFilterSet != null && !materialIdFilterSet.isEmpty(), "materialId", materialIdFilterSet);
+        List<StockFlow> stockFlowList = stockFlowMapper.selectList(stockFlowQuery);
 
-        List<ReportFlowVO> reportFlowVOList = approvalPage.getRecords().stream().map(approval -> {
-            ReportFlowVO reportFlowVO = new ReportFlowVO();
-            reportFlowVO.setApplyId(approval.getId());
-            reportFlowVO.setApprovalNo(approval.getApprovalNo());
-            reportFlowVO.setMaterialId(approval.getMaterialId());
-            reportFlowVO.setMaterialName(materialNameMap.getOrDefault(approval.getMaterialId(), "-"));
-            reportFlowVO.setFlowType("OUT");
-            reportFlowVO.setBizType("APPLY");
-            reportFlowVO.setQuantity(approval.getQuantity());
-            reportFlowVO.setOperatorId(approval.getApproveId());
-            reportFlowVO.setOperatorName(operatorNameMap.getOrDefault(approval.getApproveId(), "-"));
-            reportFlowVO.setCreateTime(approval.getOutTime());
-            return reportFlowVO;
-        }).collect(Collectors.toList());
+        Set<Long> materialIdSet = new java.util.HashSet<>();
+        Set<Long> operatorIdSet = new java.util.HashSet<>();
+        stockFlowList.forEach(item -> {
+            materialIdSet.add(item.getMaterialId());
+            if (item.getOperatorId() != null && item.getOperatorId() > 0) {
+                operatorIdSet.add(item.getOperatorId());
+            }
+        });
 
-        Page<ReportFlowVO> voPage = new Page<>(approvalPage.getCurrent(), approvalPage.getSize(), approvalPage.getTotal());
-        voPage.setRecords(reportFlowVOList);
-        return voPage;
+        Map<Long, String> materialNameMap = materialIdSet.isEmpty()
+                ? new HashMap<>()
+                : materialInfoMapper.selectBatchIds(materialIdSet).stream()
+                        .collect(Collectors.toMap(MaterialInfo::getId, MaterialInfo::getMaterialName));
+        Map<Long, String> operatorNameMap = operatorIdSet.isEmpty()
+                ? new HashMap<>()
+                : userService.listByIds(operatorIdSet).stream()
+                        .collect(Collectors.toMap(User::getId, user -> StringUtils.defaultIfBlank(user.getUserName(), user.getUserAccount())));
+
+        List<ReportFlowVO> mergedList = new ArrayList<>();
+        stockFlowList.forEach(flow -> {
+            ReportFlowVO vo = new ReportFlowVO();
+            vo.setApplyId(flow.getId());
+            vo.setApprovalNo(flow.getRelatedApprovalNo());
+            vo.setMaterialId(flow.getMaterialId());
+            vo.setMaterialName(materialNameMap.getOrDefault(flow.getMaterialId(), "-"));
+            vo.setFlowType(flow.getFlowType());
+            vo.setQuantity(flow.getQuantity());
+            vo.setOperatorId(flow.getOperatorId());
+            vo.setOperatorName(operatorNameMap.getOrDefault(flow.getOperatorId(), "-"));
+            vo.setCreateTime(flow.getCreateTime());
+            mergedList.add(vo);
+        });
+
+        String sortField = queryRequest.getSortField();
+        String normalizedSortField = StringUtils.isNotBlank(sortField) && isValidFlowSortField(sortField)
+                ? sortField
+                : "createTime";
+        sortFlowVoList(mergedList, normalizedSortField, queryRequest.getSortOrder());
+        return paginateList(queryRequest.getCurrent(), queryRequest.getPageSize(), mergedList);
     }
 
     @Override
@@ -185,7 +211,14 @@ public class ReportServiceImpl implements ReportService {
                     .reduce(0, Integer::sum);
             reportUsageVO.setTotalQuantity(totalQuantity);
             return reportUsageVO;
-        }).sorted(Comparator.comparing(ReportUsageVO::getUsageCount).reversed()).collect(Collectors.toList());
+        }).collect(Collectors.toList());
+        String sortField = queryRequest.getSortField();
+        String sortOrder = queryRequest.getSortOrder();
+        if (StringUtils.isNotBlank(sortField) && isValidUsageSortField(sortField)) {
+            sortUsageList(usageVOList, sortField, sortOrder);
+        } else {
+            usageVOList.sort(Comparator.comparing(ReportUsageVO::getUsageCount).reversed());
+        }
         return paginateList(queryRequest.getCurrent(), queryRequest.getPageSize(), usageVOList);
     }
 
@@ -230,7 +263,14 @@ public class ReportServiceImpl implements ReportService {
             turnoverVO.setCurrentStock(currentStock);
             turnoverVO.setTurnoverRate(turnoverRate);
             return turnoverVO;
-        }).sorted(Comparator.comparing(ReportTurnoverVO::getTurnoverRate).reversed()).collect(Collectors.toList());
+        }).collect(Collectors.toList());
+        String sortField = queryRequest.getSortField();
+        String sortOrder = queryRequest.getSortOrder();
+        if (StringUtils.isNotBlank(sortField) && isValidTurnoverSortField(sortField)) {
+            sortTurnoverList(turnoverVOList, sortField, sortOrder);
+        } else {
+            turnoverVOList.sort(Comparator.comparing(ReportTurnoverVO::getTurnoverRate).reversed());
+        }
         return paginateList(queryRequest.getCurrent(), queryRequest.getPageSize(), turnoverVOList);
     }
 
@@ -282,5 +322,103 @@ public class ReportServiceImpl implements ReportService {
         } catch (ParseException e) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "时间格式错误，请使用 " + DATETIME_PATTERN);
         }
+    }
+
+    private boolean isValidMaterialSortField(String sortField) {
+        return "id".equals(sortField)
+                || "materialName".equals(sortField)
+                || "category".equals(sortField)
+                || "status".equals(sortField)
+                || "createTime".equals(sortField)
+                || "updateTime".equals(sortField);
+    }
+
+    private boolean isValidStockComputedSortField(String sortField) {
+        return "currentStock".equals(sortField)
+                || "warnThreshold".equals(sortField)
+                || "location".equals(sortField);
+    }
+
+    private void sortReportStockList(List<ReportStockVO> list, String sortField, String sortOrder) {
+        boolean isAsc = CommonConstant.SORT_ORDER_ASC.equals(sortOrder);
+        Comparator<ReportStockVO> comparator;
+        if ("currentStock".equals(sortField)) {
+            comparator = Comparator.comparing(item -> item.getCurrentStock() == null ? 0 : item.getCurrentStock());
+        } else if ("warnThreshold".equals(sortField)) {
+            comparator = Comparator.comparing(item -> item.getWarnThreshold() == null ? 0 : item.getWarnThreshold());
+        } else if ("location".equals(sortField)) {
+            comparator = Comparator.comparing(item -> StringUtils.defaultIfBlank(item.getLocation(), ""));
+        } else {
+            return;
+        }
+        list.sort(isAsc ? comparator : comparator.reversed());
+    }
+
+    private boolean isValidFlowSortField(String sortField) {
+        return "createTime".equals(sortField)
+                || "approvalNo".equals(sortField)
+                || "quantity".equals(sortField)
+                || "materialId".equals(sortField)
+                || "flowType".equals(sortField)
+                || "relatedApprovalNo".equals(sortField);
+    }
+
+    private void sortFlowVoList(List<ReportFlowVO> list, String sortField, String sortOrder) {
+        String effectiveSortField = StringUtils.defaultIfBlank(sortField, "createTime");
+        boolean isAsc = CommonConstant.SORT_ORDER_ASC.equals(sortOrder);
+        Comparator<ReportFlowVO> comparator;
+        if ("quantity".equals(effectiveSortField)) {
+            comparator = Comparator.comparing(item -> item.getQuantity() == null ? 0 : item.getQuantity());
+        } else if ("materialId".equals(effectiveSortField)) {
+            comparator = Comparator.comparing(item -> item.getMaterialId() == null ? 0L : item.getMaterialId());
+        } else if ("flowType".equals(effectiveSortField)) {
+            comparator = Comparator.comparing(item -> StringUtils.defaultIfBlank(item.getFlowType(), ""));
+        } else if ("approvalNo".equals(effectiveSortField) || "relatedApprovalNo".equals(effectiveSortField)) {
+            comparator = Comparator.comparing(item -> StringUtils.defaultIfBlank(item.getApprovalNo(), ""));
+        } else {
+            comparator = Comparator.comparing(item -> item.getCreateTime() == null ? new Date(0) : item.getCreateTime());
+        }
+        list.sort(isAsc ? comparator : comparator.reversed());
+    }
+
+    private boolean isValidUsageSortField(String sortField) {
+        return "usageCount".equals(sortField)
+                || "totalQuantity".equals(sortField)
+                || "materialName".equals(sortField);
+    }
+
+    private void sortUsageList(List<ReportUsageVO> list, String sortField, String sortOrder) {
+        boolean isAsc = CommonConstant.SORT_ORDER_ASC.equals(sortOrder);
+        Comparator<ReportUsageVO> comparator;
+        if ("totalQuantity".equals(sortField)) {
+            comparator = Comparator.comparing(item -> item.getTotalQuantity() == null ? 0 : item.getTotalQuantity());
+        } else if ("materialName".equals(sortField)) {
+            comparator = Comparator.comparing(item -> StringUtils.defaultIfBlank(item.getMaterialName(), ""));
+        } else {
+            comparator = Comparator.comparing(item -> item.getUsageCount() == null ? 0 : item.getUsageCount());
+        }
+        list.sort(isAsc ? comparator : comparator.reversed());
+    }
+
+    private boolean isValidTurnoverSortField(String sortField) {
+        return "turnoverRate".equals(sortField)
+                || "outQuantity".equals(sortField)
+                || "currentStock".equals(sortField)
+                || "materialName".equals(sortField);
+    }
+
+    private void sortTurnoverList(List<ReportTurnoverVO> list, String sortField, String sortOrder) {
+        boolean isAsc = CommonConstant.SORT_ORDER_ASC.equals(sortOrder);
+        Comparator<ReportTurnoverVO> comparator;
+        if ("outQuantity".equals(sortField)) {
+            comparator = Comparator.comparing(item -> item.getOutQuantity() == null ? 0 : item.getOutQuantity());
+        } else if ("currentStock".equals(sortField)) {
+            comparator = Comparator.comparing(item -> item.getCurrentStock() == null ? 0 : item.getCurrentStock());
+        } else if ("materialName".equals(sortField)) {
+            comparator = Comparator.comparing(item -> StringUtils.defaultIfBlank(item.getMaterialName(), ""));
+        } else {
+            comparator = Comparator.comparing(item -> item.getTurnoverRate() == null ? 0 : item.getTurnoverRate());
+        }
+        list.sort(isAsc ? comparator : comparator.reversed());
     }
 }

@@ -5,12 +5,16 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.yupi.springbootinit.common.ErrorCode;
 import com.yupi.springbootinit.constant.ApprovalConstant;
+import com.yupi.springbootinit.constant.CommonConstant;
 import com.yupi.springbootinit.constant.NoticeConstant;
+import com.yupi.springbootinit.constant.UserConstant;
 import com.yupi.springbootinit.exception.BusinessException;
 import com.yupi.springbootinit.mapper.InventoryApprovalMapper;
 import com.yupi.springbootinit.mapper.InventoryInfoMapper;
 import com.yupi.springbootinit.mapper.MaterialInfoMapper;
 import com.yupi.springbootinit.mapper.NoticeMapper;
+import com.yupi.springbootinit.mapper.StockFlowMapper;
+import com.yupi.springbootinit.model.entity.StockFlow;
 import com.yupi.springbootinit.model.dto.apply.ApplyAddRequest;
 import com.yupi.springbootinit.model.dto.apply.ApplyQueryRequest;
 import com.yupi.springbootinit.model.entity.InventoryApproval;
@@ -66,6 +70,9 @@ public class ApplyServiceImpl implements ApplyService {
     @Resource
     private WarnService warnService;
 
+    @Resource
+    private StockFlowMapper stockFlowMapper;
+
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Long createApply(ApplyAddRequest applyAddRequest, User loginUser) {
@@ -93,6 +100,7 @@ public class ApplyServiceImpl implements ApplyService {
         if (!insert) {
             throw new BusinessException(ErrorCode.OPERATION_ERROR, "提交申请失败");
         }
+        createPendingApprovalNotice(inventoryApproval, materialInfo);
         return inventoryApproval.getId();
     }
 
@@ -105,7 +113,26 @@ public class ApplyServiceImpl implements ApplyService {
         QueryWrapper<InventoryApproval> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("applicantId", loginUser.getId());
         queryWrapper.eq(queryRequest.getStatus() != null, "status", queryRequest.getStatus());
-        queryWrapper.orderByDesc("applyTime");
+        if (StringUtils.isNotBlank(queryRequest.getApprovalNo())) {
+            queryWrapper.like("approvalNo", queryRequest.getApprovalNo());
+        }
+        if (StringUtils.isNotBlank(queryRequest.getMaterialName())) {
+            QueryWrapper<MaterialInfo> materialQueryWrapper = new QueryWrapper<>();
+            materialQueryWrapper.like("materialName", queryRequest.getMaterialName());
+            List<MaterialInfo> materialInfoList = materialInfoMapper.selectList(materialQueryWrapper);
+            if (materialInfoList == null || materialInfoList.isEmpty()) {
+                return new Page<>(queryRequest.getCurrent(), queryRequest.getPageSize(), 0);
+            }
+            queryWrapper.in("materialId", materialInfoList.stream().map(MaterialInfo::getId).collect(Collectors.toSet()));
+        }
+        String sortField = queryRequest.getSortField();
+        String sortOrder = queryRequest.getSortOrder();
+        if (StringUtils.isNotBlank(sortField) && isValidApplySortField(sortField)) {
+            boolean isAsc = CommonConstant.SORT_ORDER_ASC.equals(sortOrder);
+            queryWrapper.orderBy(true, isAsc, sortField);
+        } else {
+            queryWrapper.orderByDesc("applyTime");
+        }
         Page<InventoryApproval> approvalPage = inventoryApprovalMapper.selectPage(
                 new Page<>(queryRequest.getCurrent(), queryRequest.getPageSize()),
                 queryWrapper);
@@ -117,11 +144,74 @@ public class ApplyServiceImpl implements ApplyService {
         ApplyQueryRequest queryRequest = applyQueryRequest == null ? new ApplyQueryRequest() : applyQueryRequest;
         QueryWrapper<InventoryApproval> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("status", queryRequest.getStatus() == null ? ApprovalConstant.STATUS_PENDING : queryRequest.getStatus());
-        queryWrapper.orderByAsc("applyTime");
+        if (StringUtils.isNotBlank(queryRequest.getApprovalNo())) {
+            queryWrapper.like("approvalNo", queryRequest.getApprovalNo());
+        }
+        if (StringUtils.isNotBlank(queryRequest.getMaterialName())) {
+            QueryWrapper<MaterialInfo> materialQueryWrapper = new QueryWrapper<>();
+            materialQueryWrapper.like("materialName", queryRequest.getMaterialName());
+            List<MaterialInfo> materialInfoList = materialInfoMapper.selectList(materialQueryWrapper);
+            if (materialInfoList == null || materialInfoList.isEmpty()) {
+                return new Page<>(queryRequest.getCurrent(), queryRequest.getPageSize(), 0);
+            }
+            queryWrapper.in("materialId", materialInfoList.stream().map(MaterialInfo::getId).collect(Collectors.toSet()));
+        }
+        String sortField = queryRequest.getSortField();
+        String sortOrder = queryRequest.getSortOrder();
+        if (StringUtils.isNotBlank(sortField) && isValidApplySortField(sortField)) {
+            boolean isAsc = CommonConstant.SORT_ORDER_ASC.equals(sortOrder);
+            queryWrapper.orderBy(true, isAsc, sortField);
+        } else {
+            queryWrapper.orderByAsc("applyTime");
+        }
         Page<InventoryApproval> approvalPage = inventoryApprovalMapper.selectPage(
                 new Page<>(queryRequest.getCurrent(), queryRequest.getPageSize()),
                 queryWrapper);
         return buildApplyVoPage(approvalPage);
+    }
+
+    @Override
+    public Page<ApplyVO> listHistoryApply(ApplyQueryRequest applyQueryRequest) {
+        ApplyQueryRequest queryRequest = applyQueryRequest == null ? new ApplyQueryRequest() : applyQueryRequest;
+        QueryWrapper<InventoryApproval> queryWrapper = new QueryWrapper<>();
+        if (queryRequest.getStatus() == null) {
+            queryWrapper.ne("status", ApprovalConstant.STATUS_PENDING);
+        } else {
+            queryWrapper.eq("status", queryRequest.getStatus());
+        }
+        if (StringUtils.isNotBlank(queryRequest.getApprovalNo())) {
+            queryWrapper.like("approvalNo", queryRequest.getApprovalNo());
+        }
+        if (StringUtils.isNotBlank(queryRequest.getMaterialName())) {
+            QueryWrapper<MaterialInfo> materialQueryWrapper = new QueryWrapper<>();
+            materialQueryWrapper.like("materialName", queryRequest.getMaterialName());
+            List<MaterialInfo> materialInfoList = materialInfoMapper.selectList(materialQueryWrapper);
+            if (materialInfoList == null || materialInfoList.isEmpty()) {
+                return new Page<>(queryRequest.getCurrent(), queryRequest.getPageSize(), 0);
+            }
+            queryWrapper.in("materialId", materialInfoList.stream().map(MaterialInfo::getId).collect(Collectors.toSet()));
+        }
+        String sortField = queryRequest.getSortField();
+        String sortOrder = queryRequest.getSortOrder();
+        if (StringUtils.isNotBlank(sortField) && isValidApplySortField(sortField)) {
+            boolean isAsc = CommonConstant.SORT_ORDER_ASC.equals(sortOrder);
+            queryWrapper.orderBy(true, isAsc, sortField);
+        } else {
+            queryWrapper.orderByDesc("approveTime");
+            queryWrapper.orderByDesc("applyTime");
+        }
+        Page<InventoryApproval> approvalPage = inventoryApprovalMapper.selectPage(
+                new Page<>(queryRequest.getCurrent(), queryRequest.getPageSize()),
+                queryWrapper);
+        return buildApplyVoPage(approvalPage);
+    }
+
+    private boolean isValidApplySortField(String sortField) {
+        return "applyTime".equals(sortField)
+                || "approveTime".equals(sortField)
+                || "quantity".equals(sortField)
+                || "status".equals(sortField)
+                || "approvalNo".equals(sortField);
     }
 
     @Override
@@ -152,6 +242,21 @@ public class ApplyServiceImpl implements ApplyService {
         updateMaterialTotalStock(inventoryApproval.getMaterialId());
         saveApprovalResultNotice(inventoryApproval, true);
         InventoryInfo latestInventory = inventoryInfoMapper.selectById(inventoryInfo.getId());
+        int afterStock = latestInventory == null ? 0 : (latestInventory.getCurrentStock() == null ? 0 : latestInventory.getCurrentStock());
+
+        // 记录审批出库流水
+        StockFlow stockFlow = new StockFlow();
+        stockFlow.setMaterialId(inventoryApproval.getMaterialId());
+        stockFlow.setFlowType("APPLY_OUT");
+        stockFlow.setQuantity(quantity);
+        stockFlow.setBeforeStock(afterStock + quantity);
+        stockFlow.setAfterStock(afterStock);
+        stockFlow.setOperatorId(adminUser.getId());
+        stockFlow.setRelatedApprovalNo(inventoryApproval.getApprovalNo());
+        stockFlow.setRemark("审批出库: " + inventoryApproval.getApprovalNo());
+        stockFlow.setCreateTime(now);
+        stockFlowMapper.insert(stockFlow);
+
         warnService.syncStockWarnForMaterial(inventoryApproval.getMaterialId(),
                 latestInventory == null ? null : latestInventory.getCurrentStock());
         return true;
@@ -246,6 +351,28 @@ public class ApplyServiceImpl implements ApplyService {
         notice.setRefType(NoticeConstant.REF_TYPE_APPROVAL);
         notice.setIsRead(NoticeConstant.UNREAD);
         noticeMapper.insert(notice);
+    }
+
+    private void createPendingApprovalNotice(InventoryApproval approval, MaterialInfo materialInfo) {
+        QueryWrapper<User> userQueryWrapper = new QueryWrapper<>();
+        userQueryWrapper.eq("userRole", UserConstant.ADMIN_ROLE);
+        userQueryWrapper.eq("userStatus", 1);
+        List<User> adminList = userService.list(userQueryWrapper);
+        if (adminList == null || adminList.isEmpty()) {
+            return;
+        }
+        String content = String.format("物资【%s】申请数量 %d", materialInfo.getMaterialName(), approval.getQuantity());
+        for (User admin : adminList) {
+            Notice notice = new Notice();
+            notice.setUserId(admin.getId());
+            notice.setTitle("待审批申请");
+            notice.setContent(content);
+            notice.setNoticeType(NoticeConstant.TYPE_APPROVAL_RESULT);
+            notice.setRefId(approval.getId());
+            notice.setRefType(NoticeConstant.REF_TYPE_APPROVAL);
+            notice.setIsRead(NoticeConstant.UNREAD);
+            noticeMapper.insert(notice);
+        }
     }
 
     private Page<ApplyVO> buildApplyVoPage(Page<InventoryApproval> entityPage) {

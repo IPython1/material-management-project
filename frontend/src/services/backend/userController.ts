@@ -2,6 +2,58 @@
 /* eslint-disable */
 import { request } from '@umijs/max';
 
+/** resetUserPassword POST /api/user/${param0}/resetPwd */
+export async function resetUserPasswordUsingPost(
+  // 叠加生成的Param类型 (非body参数swagger默认没有生成对象)
+  params: API.resetUserPasswordUsingPOSTParams,
+  options?: { [key: string]: any },
+) {
+  const { id: param0, ...queryParams } = params;
+  return request<API.BaseResponseBoolean_>(`/api/user/${param0}/resetPwd`, {
+    method: 'POST',
+    params: { ...queryParams },
+    ...(options || {}),
+  });
+}
+
+/** assignUserRole PUT /api/user/${param0}/role */
+export async function assignUserRoleUsingPut(
+  // 叠加生成的Param类型 (非body参数swagger默认没有生成对象)
+  params: API.assignUserRoleUsingPUTParams,
+  body: API.UserRoleAssignRequest,
+  options?: { [key: string]: any },
+) {
+  const { id: param0, ...queryParams } = params;
+  return request<API.BaseResponseBoolean_>(`/api/user/${param0}/role`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    params: { ...queryParams },
+    data: body,
+    ...(options || {}),
+  });
+}
+
+/** updateUserStatus PUT /api/user/${param0}/status */
+export async function updateUserStatusUsingPut(
+  // 叠加生成的Param类型 (非body参数swagger默认没有生成对象)
+  params: API.updateUserStatusUsingPUTParams,
+  body: API.UserStatusUpdateRequest,
+  options?: { [key: string]: any },
+) {
+  const { id: param0, ...queryParams } = params;
+  return request<API.BaseResponseBoolean_>(`/api/user/${param0}/status`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    params: { ...queryParams },
+    data: body,
+    ...(options || {}),
+  });
+}
+
 /** addUser POST /api/user/add */
 export async function addUserUsingPost(body: API.UserAddRequest, options?: { [key: string]: any }) {
   return request<API.BaseResponseLong_>('/api/user/add', {

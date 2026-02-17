@@ -39,7 +39,7 @@ const Login: React.FC = () => {
         currentUser: res.data,
       });
       const urlParams = new URL(window.location.href).searchParams;
-      history.push(urlParams.get('redirect') || '/');
+      history.push(urlParams.get('redirect') || '/welcome');
       return;
     } catch (error: any) {
       const defaultLoginFailureMessage = `登录失败，${error.message}`;
@@ -66,8 +66,8 @@ const Login: React.FC = () => {
             maxWidth: '75vw',
           }}
           logo={<img alt="logo" style={{ height: '100%' }} src="/logo.svg" />}
-          title="鱼皮前端万用模板"
-          subTitle={'快速开发属于自己的前端项目'}
+          title="物资管理系统"
+          subTitle={'物资、库存、审批与预警一体化管理'}
           initialValues={{
             autoLogin: true,
           }}

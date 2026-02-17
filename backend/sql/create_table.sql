@@ -20,10 +20,14 @@ create table if not exists user
     userAvatar   varchar(1024)                          null comment '用户头像',
     userProfile  varchar(512)                           null comment '用户简介',
     userRole     varchar(256) default 'user'            not null comment '用户角色：user/admin/ban',
+    userPhone    varchar(32)                            null comment '手机号',
+    userStatus   tinyint      default 1                 not null comment '账号状态：1启用 0禁用',
     createTime   datetime     default CURRENT_TIMESTAMP not null comment '创建时间',
     updateTime   datetime     default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP comment '更新时间',
     isDelete     tinyint      default 0                 not null comment '是否删除',
-    index idx_unionId (unionId)
+    index idx_unionId (unionId),
+    index idx_userPhone (userPhone),
+    index idx_userStatus (userStatus)
 ) comment '用户' collate = utf8mb4_unicode_ci;
 
 -- 帖子表
@@ -158,6 +162,24 @@ create table if not exists warn_rule
     index idx_materialId (materialId),
     index idx_isEnabled (isEnabled)
 ) comment '预警规则表' collate = utf8mb4_unicode_ci;
+
+-- 出入库流水表
+create table if not exists stock_flow
+(
+    id                bigint auto_increment comment '流水ID' primary key,
+    materialId        bigint                             not null comment '物资ID',
+    flowType          varchar(20)                        not null comment '流水类型：MANUAL_IN调整入库/MANUAL_OUT调整出库/APPLY_OUT审批出库',
+    quantity          int                                not null comment '数量（正数）',
+    beforeStock       int                                null comment '变动前库存',
+    afterStock        int                                null comment '变动后库存',
+    operatorId        bigint                             null comment '操作人ID',
+    relatedApprovalNo varchar(50)                        null comment '关联申请单号',
+    remark            varchar(255)                       null comment '备注',
+    createTime        datetime default CURRENT_TIMESTAMP not null comment '创建时间',
+    index idx_materialId (materialId),
+    index idx_flowType (flowType),
+    index idx_createTime (createTime)
+) comment '出入库流水表' collate = utf8mb4_unicode_ci;
 
 -- 预警记录表
 create table if not exists warn_record

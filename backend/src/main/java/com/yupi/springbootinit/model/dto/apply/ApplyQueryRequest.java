@@ -17,5 +17,15 @@ public class ApplyQueryRequest extends PageRequest implements Serializable {
      */
     private Integer status;
 
+    /**
+     * 申请单号
+     */
+    private String approvalNo;
+
+    /**
+     * 物资名称
+     */
+    private String materialName;
+
     private static final long serialVersionUID = 1L;
 }

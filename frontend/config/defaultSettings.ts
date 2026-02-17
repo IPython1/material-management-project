@@ -15,7 +15,7 @@ const Settings: ProLayoutProps & {
   fixedHeader: false,
   fixSiderbar: true,
   colorWeak: false,
-  title: '鱼皮前端万用模板',
+  title: '物资管理系统',
   pwa: true,
   iconfontUrl: '',
   token: {

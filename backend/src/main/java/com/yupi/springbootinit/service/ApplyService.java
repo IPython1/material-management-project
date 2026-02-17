@@ -28,6 +28,11 @@ public interface ApplyService {
     Page<ApplyVO> listPendingApply(ApplyQueryRequest applyQueryRequest);
 
     /**
+     * 历史审批列表（不含待审批）
+     */
+    Page<ApplyVO> listHistoryApply(ApplyQueryRequest applyQueryRequest);
+
+    /**
      * 通过审批
      */
     Boolean approveApply(Long applyId, String approveRemark, User adminUser);

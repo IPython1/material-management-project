@@ -25,6 +25,11 @@ public class DashboardStatVO implements Serializable {
     private Long todayApplyCount;
 
     /**
+     * 今日出库 / 领用数量
+     */
+    private Long todayOutQuantity;
+
+    /**
      * 待审批数量
      */
     private Long pendingApplyCount;
@@ -33,6 +38,11 @@ public class DashboardStatVO implements Serializable {
      * 未处理预警数量
      */
     private Long unhandledWarnCount;
+
+    /**
+     * 即将过期数量（7 天内）
+     */
+    private Long expiringSoonCount;
 
     private static final long serialVersionUID = 1L;
 }

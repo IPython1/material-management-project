@@ -68,6 +68,15 @@ public class ApplyController {
     }
 
     /**
+     * 历史审批列表（管理员）
+     */
+    @GetMapping("/history")
+    @AuthCheck(mustRole = UserConstant.ADMIN_ROLE)
+    public BaseResponse<Page<ApplyVO>> listHistoryApply(ApplyQueryRequest applyQueryRequest) {
+        return ResultUtils.success(applyService.listHistoryApply(applyQueryRequest));
+    }
+
+    /**
      * 通过审批（管理员）
      */
     @PostMapping("/{id}/approve")

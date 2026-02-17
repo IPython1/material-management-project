@@ -1,10 +1,9 @@
-import { GithubOutlined } from '@ant-design/icons';
 import { DefaultFooter } from '@ant-design/pro-components';
 import '@umijs/max';
 import React from 'react';
 
 const Footer: React.FC = () => {
-  const defaultMessage = '程序员鱼皮';
+  const defaultMessage = '物资管理系统';
   const currentYear = new Date().getFullYear();
   return (
     <DefaultFooter
@@ -14,25 +13,15 @@ const Footer: React.FC = () => {
       copyright={`${currentYear} ${defaultMessage}`}
       links={[
         {
-          key: 'codeNav',
-          title: '编程导航',
-          href: 'https://yupi.icu',
+          key: 'home',
+          title: '系统首页',
+          href: '/welcome',
           blankTarget: true,
         },
         {
-          key: 'Ant Design',
-          title: '编程宝典',
-          href: 'https://codefather.cn',
-          blankTarget: true,
-        },
-        {
-          key: 'github',
-          title: (
-            <>
-              <GithubOutlined /> 鱼皮源码
-            </>
-          ),
-          href: 'https://github.com/liyupi',
+          key: 'docs',
+          title: '使用文档',
+          href: '#',
           blankTarget: true,
         },
       ]}

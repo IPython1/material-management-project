@@ -1,33 +1,48 @@
 import { PageContainer, ProColumns, ProTable } from '@ant-design/pro-components';
-import { useModel } from '@umijs/max';
+import { useEmotionCss } from '@ant-design/use-emotion-css';
+import { history, useModel } from '@umijs/max';
 import {
+  ApplyVO,
   DashboardPieItemVO,
+  DashboardStatVO,
   DashboardTrendItemVO,
+  WarnVO,
   getDashboardPieUsingGet,
   getDashboardStatUsingGet,
   getDashboardTodoUsingGet,
   getDashboardTrendUsingGet,
   getDashboardWarnUsingGet,
-  ApplyVO,
-  WarnVO,
 } from '@/services/backend/materialManagementController';
-import { Card, Col, Progress, Row, Statistic, Table, theme } from 'antd';
+import { Line, Pie } from '@ant-design/plots';
+import { Card, Col, Row, Statistic, Tag, theme } from 'antd';
 import React, { useEffect, useState } from 'react';
+
+const applyStatusTextMap: Record<number, string> = {
+  0: '待审批',
+  1: '已通过',
+  2: '已驳回',
+  3: '已出库',
+};
 
 const Welcome: React.FC = () => {
   const { token } = theme.useToken();
   const { initialState } = useModel('@@initialState');
-  const [stat, setStat] = useState<{
-    materialCount?: number;
-    totalStock?: number;
-    todayApplyCount?: number;
-    pendingApplyCount?: number;
-    unhandledWarnCount?: number;
-  }>({});
+  const isAdmin = initialState?.currentUser?.userRole === 'admin';
+  const [stat, setStat] = useState<DashboardStatVO>({});
   const [trend, setTrend] = useState<DashboardTrendItemVO[]>([]);
   const [pie, setPie] = useState<DashboardPieItemVO[]>([]);
   const [todo, setTodo] = useState<ApplyVO[]>([]);
   const [warn, setWarn] = useState<WarnVO[]>([]);
+
+  const cardHoverClassName = useEmotionCss(() => ({
+    cursor: 'pointer',
+    transition: 'all 0.25s ease',
+    borderRadius: 8,
+    '&:hover': {
+      transform: 'translateY(-4px)',
+      boxShadow: '0 10px 24px rgba(24, 144, 255, 0.18)',
+    },
+  }));
 
   useEffect(() => {
     (async () => {
@@ -56,88 +71,136 @@ const Welcome: React.FC = () => {
     })();
   }, []);
 
-  const trendColumns: ProColumns<DashboardTrendItemVO>[] = [
-    { title: '日期', dataIndex: 'date' },
-    { title: '申请单数', dataIndex: 'applyCount' },
-    { title: '出库总量', dataIndex: 'outQuantity' },
-  ];
+  const trendData = trend.flatMap((item) => [
+    { date: item.date || '-', type: '申请单数', value: Number(item.applyCount ?? 0) },
+    { date: item.date || '-', type: '出库总量', value: Number(item.outQuantity ?? 0) },
+  ]);
+
+  const trendLineConfig = {
+    data: trendData,
+    xField: 'date',
+    yField: 'value',
+    seriesField: 'type',
+    smooth: true,
+    point: {
+      size: 4,
+      shape: 'diamond',
+    },
+    legend: {
+      position: 'top' as const,
+    },
+    height: 280,
+  };
+
+  const pieData = pie
+    .map((item) => ({
+      category: item.category || '未分类',
+      value: Number(item.value ?? 0),
+    }))
+    .filter((item) => item.value > 0);
+
+  const pieConfig = {
+    data: pieData,
+    angleField: 'value',
+    colorField: 'category',
+    radius: 0.9,
+    // Keep pie config minimal to avoid runtime expression parser errors.
+    label: false,
+    legend: {
+      position: 'bottom' as const,
+    },
+    height: 280,
+  };
 
   const todoColumns: ProColumns<ApplyVO>[] = [
-    { title: '申请单号', dataIndex: 'approvalNo' },
+    { title: '申请人', dataIndex: 'applicantName' },
     { title: '物资', dataIndex: 'materialName' },
     { title: '数量', dataIndex: 'quantity' },
-    { title: '申请人', dataIndex: 'applicantName' },
-    { title: '申请时间', dataIndex: 'applyTime', valueType: 'dateTime' },
+    { title: '时间', dataIndex: 'applyTime', valueType: 'dateTime' },
+    {
+      title: '状态',
+      dataIndex: 'status',
+      render: (_, record) => {
+        const status = record.status ?? 0;
+        const color = status === 0 ? 'gold' : status === 2 ? 'red' : 'blue';
+        return <Tag color={color}>{applyStatusTextMap[status] || '-'}</Tag>;
+      },
+    },
   ];
 
   const warnColumns: ProColumns<WarnVO>[] = [
     { title: '物资', dataIndex: 'materialName' },
-    { title: '类型', dataIndex: 'warnTypeText' },
-    { title: '当前值', dataIndex: 'currentValue' },
+    { title: '当前库存', dataIndex: 'currentValue' },
     { title: '阈值', dataIndex: 'thresholdValue' },
-    { title: '时间', dataIndex: 'createTime', valueType: 'dateTime' },
+    {
+      title: '建议处理',
+      dataIndex: 'suggestion',
+      render: (_, record) =>
+        (record.warnType ?? 1) === 1 ? '及时补货或下调领用量' : '优先出库临期物资',
+    },
   ];
 
   return (
     <PageContainer>
       <Row gutter={[16, 16]}>
         <Col xs={24} sm={12} md={6}>
-          <Card bordered={false}>
+          <Card
+            bordered={false}
+            className={cardHoverClassName}
+            onClick={() => {
+              history.push('/material');
+            }}
+          >
             <Statistic title="物资总数" value={stat.materialCount ?? 0} />
           </Card>
         </Col>
         <Col xs={24} sm={12} md={6}>
-          <Card bordered={false}>
-            <Statistic title="库存总量" value={stat.totalStock ?? 0} />
+          <Card
+            bordered={false}
+            className={cardHoverClassName}
+            onClick={() => {
+              history.push('/notice');
+            }}
+          >
+            <Statistic title="库存预警数" value={stat.unhandledWarnCount ?? 0} />
           </Card>
         </Col>
         <Col xs={24} sm={12} md={6}>
-          <Card bordered={false}>
-            <Statistic title="今日申请" value={stat.todayApplyCount ?? 0} />
+          <Card
+            bordered={false}
+            className={cardHoverClassName}
+            onClick={() => {
+              history.push('/apply');
+            }}
+          >
+            <Statistic title="待审批申请" value={stat.pendingApplyCount ?? 0} />
           </Card>
         </Col>
         <Col xs={24} sm={12} md={6}>
-          <Card bordered={false}>
-            <Statistic title="待审批" value={stat.pendingApplyCount ?? 0} />
+          <Card
+            bordered={false}
+            className={cardHoverClassName}
+            onClick={() => {
+              history.push(isAdmin ? '/stock' : '/apply');
+            }}
+          >
+            <Statistic title="今日出库/领用" value={stat.todayOutQuantity ?? 0} />
           </Card>
         </Col>
       </Row>
 
       <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
         <Col xs={24} md={16}>
-          <Card
-            title="近 7 天申请与出库趋势"
-            bordered={false}
-            bodyStyle={{ padding: 0, paddingTop: 16, paddingBottom: 16 }}
-          >
-            <ProTable<DashboardTrendItemVO>
-              search={false}
-              options={false}
-              toolBarRender={false}
-              rowKey="date"
-              pagination={false}
-              dataSource={trend}
-              columns={trendColumns}
-              size="small"
-            />
+          <Card title="近 7 天出入库趋势" bordered={false}>
+            <Line {...trendLineConfig} />
           </Card>
         </Col>
         <Col xs={24} md={8}>
-          <Card title="按分类库存占比" bordered={false}>
-            {pie.length === 0 ? (
-              <div style={{ color: token.colorTextSecondary }}>暂无数据</div>
+          <Card title="物资分类占比" bordered={false}>
+            {pieData.length === 0 ? (
+              <div style={{ color: token.colorTextSecondary }}>暂无分类数据（请先准备库存数据）</div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {pie.map((item) => (
-                  <div key={item.category} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ flex: '0 0 80px' }}>{item.category}</span>
-                    <Progress
-                      percent={item.value && stat.totalStock ? Math.round((item.value / (stat.totalStock || 1)) * 100) : 0}
-                      showInfo
-                    />
-                  </div>
-                ))}
-              </div>
+              <Pie {...pieConfig} />
             )}
           </Card>
         </Col>

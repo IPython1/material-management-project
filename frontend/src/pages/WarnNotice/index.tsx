@@ -1,11 +1,11 @@
 import {
-  listNoticeUsingGet,
+  listMaterialUsingGet,
   listWarnRuleUsingGet,
   listWarnUsingGet,
   markWarnHandledUsingPut,
-  NoticeVO,
-  readNoticeUsingPut,
+  remindWarnUsingPost,
   saveWarnRuleUsingPost,
+  MaterialVO,
   WarnRuleVO,
   WarnVO,
 } from '@/services/backend/materialManagementController';
@@ -19,19 +19,129 @@ import {
   ProFormText,
   ProTable,
 } from '@ant-design/pro-components';
-import { useModel } from '@umijs/max';
+import { useLocation, useModel } from '@umijs/max';
+import { countUnhandledWarnUsingGet } from '@/services/backend/warnController';
 import { message, Space, Tabs, Tag, Typography } from 'antd';
 import React, { useMemo, useRef, useState } from 'react';
 
 const toTotal = (value?: string | number) => Number(value ?? 0);
 
+type RuleRow = {
+  id?: number;
+  ruleType: number;
+  ruleName?: string;
+  materialId?: number;
+  materialName: string;
+  thresholdValue?: number;
+  isEnabled?: number;
+  updateTime?: string;
+  source: '全局' | '自定义';
+  isInherited?: boolean;
+};
+
 const WarnNoticePage: React.FC = () => {
-  const { initialState } = useModel('@@initialState');
+  const { initialState, setInitialState } = useModel('@@initialState');
   const isAdmin = initialState?.currentUser?.userRole === 'admin';
-  const [activeTab, setActiveTab] = useState<string>(isAdmin ? 'warn' : 'notice');
+
+  const refreshWarnCount = async () => {
+    try {
+      const res = await countUnhandledWarnUsingGet();
+      setInitialState((prev: any) => ({ ...prev, unhandledWarnCount: res.data ?? 0 }));
+    } catch (_) {}
+  };
+  const location = useLocation();
+  const [activeTab, setActiveTab] = useState<string>('warn');
+  const [warnParams, setWarnParams] = useState<Record<string, any>>({});
   const tableRef = useRef<ActionType>();
   const [ruleModalOpen, setRuleModalOpen] = useState(false);
-  const [editingRule, setEditingRule] = useState<WarnRuleVO>();
+  const [editingRule, setEditingRule] = useState<RuleRow>();
+  const [ruleTypeTab, setRuleTypeTab] = useState<number>(1);
+  const [ruleRows, setRuleRows] = useState<RuleRow[]>([]);
+  const [ruleLoading, setRuleLoading] = useState(false);
+  const [globalRuleMap, setGlobalRuleMap] = useState<Record<number, WarnRuleVO | undefined>>({});
+
+  React.useEffect(() => {
+    const searchParams = new URLSearchParams(location.search);
+    const tab = searchParams.get('tab');
+    if (tab === 'warn' || tab === 'rule') {
+      setActiveTab(tab);
+    }
+    const handled = searchParams.get('handled');
+    const warnType = searchParams.get('warnType');
+    setWarnParams({
+      handled: handled !== null ? Number(handled) : undefined,
+      warnType: warnType !== null ? Number(warnType) : undefined,
+    });
+    tableRef.current?.reload();
+  }, [location.search]);
+
+  const loadRuleRows = React.useCallback(async () => {
+    setRuleLoading(true);
+    try {
+      const [ruleRes, materialRes] = await Promise.all([
+        listWarnRuleUsingGet(),
+        listMaterialUsingGet({ current: 1, pageSize: 200 }),
+      ]);
+      const ruleList = ruleRes.data || [];
+      const materialList = materialRes.data?.records || [];
+      const nextGlobalMap: Record<number, WarnRuleVO | undefined> = {};
+      const ruleMap = new Map<string, WarnRuleVO>();
+      ruleList.forEach((rule) => {
+        if (!rule.materialId) {
+          if (rule.ruleType) {
+            nextGlobalMap[rule.ruleType] = rule;
+          }
+        } else if (rule.ruleType && rule.materialId) {
+          ruleMap.set(`${rule.ruleType}-${rule.materialId}`, rule);
+        }
+      });
+      setGlobalRuleMap(nextGlobalMap);
+
+      const buildRows = (ruleType: number, list: MaterialVO[]): RuleRow[] =>
+        list.map((material) => {
+          const key = `${ruleType}-${material.id}`;
+          const rule = ruleMap.get(key);
+          if (rule) {
+            return {
+              id: rule.id,
+              ruleType,
+              ruleName: rule.ruleName,
+              materialId: material.id,
+              materialName: material.materialName || '-',
+              thresholdValue: rule.thresholdValue ?? 0,
+              isEnabled: rule.isEnabled ?? 1,
+              updateTime: rule.updateTime,
+              source: '自定义',
+              isInherited: false,
+            };
+          }
+          const globalRule = nextGlobalMap[ruleType];
+          return {
+            ruleType,
+            ruleName: globalRule?.ruleName,
+            materialId: material.id,
+            materialName: material.materialName || '-',
+            thresholdValue: globalRule?.thresholdValue ?? 0,
+            isEnabled: globalRule?.isEnabled ?? 1,
+            updateTime: globalRule?.updateTime,
+            source: '全局',
+            isInherited: true,
+          };
+        });
+
+      const stockRows = buildRows(1, materialList);
+      const expireRows = buildRows(2, materialList);
+      setRuleRows([...stockRows, ...expireRows]);
+    } finally {
+      setRuleLoading(false);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    if (activeTab === 'rule') {
+      loadRuleRows();
+    }
+  }, [activeTab, loadRuleRows]);
 
   const warnColumns = useMemo<ProColumns<WarnVO>[]>(
     () => [
@@ -48,17 +158,19 @@ const WarnNoticePage: React.FC = () => {
       {
         title: '物资',
         dataIndex: 'materialName',
-        hideInSearch: true,
+        sorter: true,
       },
       {
         title: '当前值',
         dataIndex: 'currentValue',
         hideInSearch: true,
+        sorter: true,
       },
       {
         title: '阈值',
         dataIndex: 'thresholdValue',
         hideInSearch: true,
+        sorter: true,
       },
       {
         title: '处理状态',
@@ -76,42 +188,72 @@ const WarnNoticePage: React.FC = () => {
         dataIndex: 'createTime',
         valueType: 'dateTime',
         hideInSearch: true,
+        sorter: true,
       },
       {
         title: '操作',
         valueType: 'option',
-        render: (_, record) =>
-          (record.handled ?? 0) === 0 ? (
+        render: (_, record) => {
+          if ((record.handled ?? 0) !== 0) {
+            return '-';
+          }
+          if (isAdmin) {
+            return (
+              <Typography.Link
+                onClick={async () => {
+                  if (!record.id) return;
+                  const hide = message.loading('处理中');
+                  try {
+                    const res = await markWarnHandledUsingPut(String(record.id));
+                    hide();
+                    if (res.code === 0) {
+                      message.success('已标记处理');
+                      tableRef.current?.reload();
+                      refreshWarnCount();
+                    } else {
+                      message.error(res.message || '处理失败');
+                    }
+                  } catch (e: any) {
+                    hide();
+                    message.error(`处理失败，${e.message}`);
+                  }
+                }}
+              >
+                标记已处理
+              </Typography.Link>
+            );
+          }
+          return (
             <Typography.Link
               onClick={async () => {
                 if (!record.id) return;
-                const hide = message.loading('处理中');
+                const hide = message.loading('已通知管理员');
                 try {
-                  await markWarnHandledUsingPut(record.id);
+                  const res = await remindWarnUsingPost(String(record.id));
                   hide();
-                  message.success('已标记处理');
-                  tableRef.current?.reload();
+                  if (res.code === 0) {
+                    message.success('已提醒管理员处理');
+                  } else {
+                    message.error(res.message || '提醒失败');
+                  }
                 } catch (e: any) {
                   hide();
-                  message.error(`处理失败，${e.message}`);
+                  message.error(`提醒失败，${e.message}`);
                 }
               }}
             >
-              标记已处理
+              提醒管理员
             </Typography.Link>
-          ) : (
-            '-'
-          ),
+          );
+        },
       },
     ],
     [],
   );
 
-  const ruleColumns = useMemo<ProColumns<WarnRuleVO>[]>(
+  const ruleColumns = useMemo<ProColumns<RuleRow>[]>(
     () => [
-      { title: '规则名称', dataIndex: 'ruleName' },
-      { title: '规则类型', dataIndex: 'ruleTypeText', hideInSearch: true },
-      { title: '作用物资', dataIndex: 'materialName', hideInSearch: true },
+      { title: '物资', dataIndex: 'materialName', hideInSearch: true },
       { title: '阈值', dataIndex: 'thresholdValue', hideInSearch: true },
       {
         title: '状态',
@@ -121,6 +263,15 @@ const WarnNoticePage: React.FC = () => {
           1: { text: '启用' },
           0: { text: '停用' },
         },
+        render: (_, record) =>
+          (record.isEnabled ?? 1) === 1 ? <Tag color="green">启用</Tag> : <Tag>停用</Tag>,
+      },
+      {
+        title: '规则来源',
+        dataIndex: 'source',
+        hideInSearch: true,
+        render: (_, record) =>
+          record.source === '全局' ? <Tag color="blue">全局</Tag> : <Tag color="geekblue">自定义</Tag>,
       },
       {
         title: '更新时间',
@@ -138,64 +289,9 @@ const WarnNoticePage: React.FC = () => {
               setRuleModalOpen(true);
             }}
           >
-            编辑
+            {record.isInherited ? '设置' : '编辑'}
           </Typography.Link>
         ),
-      },
-    ],
-    [],
-  );
-
-  const noticeColumns = useMemo<ProColumns<NoticeVO>[]>(
-    () => [
-      { title: '标题', dataIndex: 'title', ellipsis: true, hideInSearch: true },
-      { title: '内容', dataIndex: 'content', ellipsis: true, hideInSearch: true },
-      {
-        title: '类型',
-        dataIndex: 'noticeType',
-        valueType: 'select',
-        valueEnum: {
-          1: { text: '预警通知' },
-          2: { text: '审批结果' },
-        },
-      },
-      {
-        title: '已读',
-        dataIndex: 'isRead',
-        valueType: 'select',
-        valueEnum: {
-          0: { text: '未读' },
-          1: { text: '已读' },
-        },
-        render: (_, record) =>
-          (record.isRead ?? 0) === 1 ? <Tag color="green">已读</Tag> : <Tag color="blue">未读</Tag>,
-      },
-      { title: '时间', dataIndex: 'createTime', valueType: 'dateTime', hideInSearch: true },
-      {
-        title: '操作',
-        valueType: 'option',
-        render: (_, record) =>
-          (record.isRead ?? 0) === 0 ? (
-            <Typography.Link
-              onClick={async () => {
-                if (!record.id) return;
-                const hide = message.loading('处理中');
-                try {
-                  await readNoticeUsingPut(record.id);
-                  hide();
-                  message.success('已标记已读');
-                  tableRef.current?.reload();
-                } catch (e: any) {
-                  hide();
-                  message.error(`操作失败，${e.message}`);
-                }
-              }}
-            >
-              标记已读
-            </Typography.Link>
-          ) : (
-            '-'
-          ),
       },
     ],
     [],
@@ -210,9 +306,8 @@ const WarnNoticePage: React.FC = () => {
           tableRef.current?.reload();
         }}
         items={[
-          ...(isAdmin ? [{ key: 'warn', label: '预警列表' }] : []),
+          { key: 'warn', label: isAdmin ? '预警列表' : '我的预警' },
           ...(isAdmin ? [{ key: 'rule', label: '预警规则' }] : []),
-          { key: 'notice', label: '通知中心' },
         ]}
       />
 
@@ -222,13 +317,18 @@ const WarnNoticePage: React.FC = () => {
           rowKey="id"
           columns={warnColumns}
           search={{ labelWidth: 100 }}
-          request={async (params) => {
+          params={warnParams}
+          request={async (params, sort) => {
+            const sortField = Object.keys(sort || {})?.[0];
+            const sortOrder = sortField ? sort?.[sortField] : undefined;
             const res = await listWarnUsingGet({
               current: params.current,
               pageSize: params.pageSize,
               warnType: params.warnType as unknown as number,
               handled: params.handled as unknown as number,
               materialName: params.materialName as string,
+              sortField,
+              sortOrder: sortOrder ?? undefined,
             });
             return {
               data: res.data?.records || [],
@@ -241,50 +341,47 @@ const WarnNoticePage: React.FC = () => {
 
       {activeTab === 'rule' ? (
         <>
-          <ProTable<WarnRuleVO>
-            actionRef={tableRef}
-            rowKey="id"
-            columns={ruleColumns}
-            search={{ labelWidth: 100 }}
-            toolBarRender={() => [
-              <Space key="tool">
-                <Typography.Link
-                  onClick={() => {
-                    setEditingRule(undefined);
-                    setRuleModalOpen(true);
-                  }}
-                >
-                  新建规则
-                </Typography.Link>
-              </Space>,
+          <Tabs
+            activeKey={String(ruleTypeTab)}
+            onChange={(key) => setRuleTypeTab(Number(key))}
+            items={[
+              { key: '1', label: '库存预警规则' },
+              { key: '2', label: '临期预警规则' },
             ]}
-            request={async () => {
-              const res = await listWarnRuleUsingGet();
-              return {
-                data: res.data || [],
-                success: res.code === 0,
-                total: (res.data || []).length,
-              };
+          />
+          <ProTable<RuleRow>
+            rowKey={(record) => `${record.ruleType}-${record.materialId}`}
+            columns={ruleColumns}
+            dataSource={ruleRows.filter((item) => item.ruleType === ruleTypeTab)}
+            search={false}
+            options={false}
+            loading={ruleLoading}
+            toolBarRender={() => {
+              const globalRule = globalRuleMap[ruleTypeTab];
+              const thresholdText =
+                globalRule?.thresholdValue !== undefined ? String(globalRule.thresholdValue) : '-';
+              return [
+                <Space key="tool">
+                  <Tag color="blue">全局阈值：{thresholdText}</Tag>
+                </Space>,
+              ];
             }}
           />
           <ModalForm<{
             ruleName?: string;
-            ruleType: number;
-            materialId?: number;
             thresholdValue: number;
             isEnabled: number;
           }>
-            title={editingRule ? '编辑规则' : '新建规则'}
+            title={editingRule ? `编辑规则 - ${editingRule.materialName}` : '编辑规则'}
             open={ruleModalOpen}
             initialValues={{
               ruleName: editingRule?.ruleName,
-              ruleType: (editingRule?.ruleType || 1) as number,
-              materialId: editingRule?.materialId ? Number(editingRule.materialId) : undefined,
+              materialName: editingRule?.materialName,
               thresholdValue: editingRule?.thresholdValue || 0,
               isEnabled: (editingRule?.isEnabled ?? 1) as number,
             }}
             modalProps={{
-              destroyOnClose: true,
+              destroyOnHidden: true,
               onCancel: () => {
                 setRuleModalOpen(false);
                 setEditingRule(undefined);
@@ -295,13 +392,17 @@ const WarnNoticePage: React.FC = () => {
               try {
                 await saveWarnRuleUsingPost({
                   id: editingRule?.id,
-                  ...values,
+                  ruleType: editingRule?.ruleType ?? ruleTypeTab,
+                  materialId: editingRule?.materialId,
+                  ruleName: values.ruleName,
+                  thresholdValue: values.thresholdValue,
+                  isEnabled: values.isEnabled,
                 });
                 hide();
                 message.success('保存成功');
                 setRuleModalOpen(false);
                 setEditingRule(undefined);
-                tableRef.current?.reload();
+                loadRuleRows();
                 return true;
               } catch (e: any) {
                 hide();
@@ -310,17 +411,8 @@ const WarnNoticePage: React.FC = () => {
               }
             }}
           >
+            <ProFormText name="materialName" label="物资" fieldProps={{ readOnly: true }} />
             <ProFormText name="ruleName" label="规则名称" />
-            <ProFormSelect
-              name="ruleType"
-              label="规则类型"
-              valueEnum={{
-                1: '库存预警',
-                2: '临期预警',
-              }}
-              rules={[{ required: true, message: '请选择规则类型' }]}
-            />
-            <ProFormDigit name="materialId" label="物资ID（留空=全局）" min={1} />
             <ProFormDigit
               name="thresholdValue"
               label="阈值"
@@ -340,26 +432,6 @@ const WarnNoticePage: React.FC = () => {
         </>
       ) : null}
 
-      {activeTab === 'notice' ? (
-        <ProTable<NoticeVO>
-          actionRef={tableRef}
-          rowKey="id"
-          columns={noticeColumns}
-          search={{ labelWidth: 100 }}
-          request={async (params) => {
-            const res = await listNoticeUsingGet({
-              current: params.current,
-              pageSize: params.pageSize,
-              isRead: params.isRead as unknown as number,
-            });
-            return {
-              data: res.data?.records || [],
-              success: res.code === 0,
-              total: toTotal(res.data?.total),
-            };
-          }}
-        />
-      ) : null}
     </PageContainer>
   );
 };

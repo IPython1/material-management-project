@@ -3,6 +3,7 @@ package com.yupi.springbootinit.controller;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.yupi.springbootinit.annotation.AuthCheck;
 import com.yupi.springbootinit.common.BaseResponse;
+import com.yupi.springbootinit.common.DeleteRequest;
 import com.yupi.springbootinit.common.ErrorCode;
 import com.yupi.springbootinit.common.ResultUtils;
 import com.yupi.springbootinit.constant.UserConstant;
@@ -10,6 +11,7 @@ import com.yupi.springbootinit.exception.BusinessException;
 import com.yupi.springbootinit.model.dto.report.ReportFlowQueryRequest;
 import com.yupi.springbootinit.model.dto.report.ReportStockQueryRequest;
 import com.yupi.springbootinit.model.dto.stock.StockAdjustRequest;
+import com.yupi.springbootinit.model.dto.stock.StockSaveRequest;
 import com.yupi.springbootinit.model.entity.User;
 import com.yupi.springbootinit.model.vo.ReportFlowVO;
 import com.yupi.springbootinit.model.vo.ReportStockVO;
@@ -67,6 +69,32 @@ public class StockController {
         }
         User loginUser = userService.getLoginUser(request);
         return ResultUtils.success(stockService.adjustStock(stockAdjustRequest, loginUser));
+    }
+
+    /**
+     * 编辑库存信息
+     */
+    @PostMapping("/stock/save")
+    @AuthCheck(mustRole = UserConstant.ADMIN_ROLE)
+    public BaseResponse<Boolean> saveStock(@RequestBody StockSaveRequest stockSaveRequest, HttpServletRequest request) {
+        if (stockSaveRequest == null) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR);
+        }
+        User loginUser = userService.getLoginUser(request);
+        return ResultUtils.success(stockService.saveStock(stockSaveRequest, loginUser));
+    }
+
+    /**
+     * 删除库存记录（按物资）
+     */
+    @PostMapping("/stock/delete")
+    @AuthCheck(mustRole = UserConstant.ADMIN_ROLE)
+    public BaseResponse<Boolean> deleteStock(@RequestBody DeleteRequest deleteRequest, HttpServletRequest request) {
+        if (deleteRequest == null || deleteRequest.getId() == null || deleteRequest.getId() <= 0) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR);
+        }
+        User loginUser = userService.getLoginUser(request);
+        return ResultUtils.success(stockService.deleteStock(deleteRequest.getId(), loginUser));
     }
 
     /**

@@ -38,6 +38,11 @@ public class MaterialVO implements Serializable {
     private Integer stockTotal;
 
     /**
+     * 预警阈值
+     */
+    private Integer warnThreshold;
+
+    /**
      * 状态：1正常 0停用
      */
     private Integer status;

@@ -60,4 +60,6 @@ interface BaseResponse<T> {
  */
 interface InitialState {
   currentUser?: API.LoginUserVO;
+  unhandledWarnCount?: number;
+  pendingApplyCount?: number;
 }

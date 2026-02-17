@@ -3,6 +3,7 @@ package com.yupi.springbootinit.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.yupi.springbootinit.common.ErrorCode;
+import com.yupi.springbootinit.constant.CommonConstant;
 import com.yupi.springbootinit.exception.BusinessException;
 import com.yupi.springbootinit.mapper.InventoryInfoMapper;
 import com.yupi.springbootinit.mapper.MaterialInfoMapper;
@@ -16,12 +17,16 @@ import com.yupi.springbootinit.service.MaterialService;
 import com.yupi.springbootinit.service.WarnService;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import javax.annotation.Resource;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import java.util.stream.Collectors;
 
 /**
  * 物资管理服务实现
@@ -45,7 +50,14 @@ public class MaterialServiceImpl implements MaterialService {
         queryWrapper.like(StringUtils.isNotBlank(query.getMaterialName()), "materialName", query.getMaterialName());
         queryWrapper.eq(StringUtils.isNotBlank(query.getCategory()), "category", query.getCategory());
         queryWrapper.eq(query.getStatus() != null, "status", query.getStatus());
-        queryWrapper.orderByDesc("updateTime");
+        String sortField = query.getSortField();
+        String sortOrder = query.getSortOrder();
+        if (StringUtils.isNotBlank(sortField) && isValidMaterialSortField(sortField)) {
+            boolean isAsc = CommonConstant.SORT_ORDER_ASC.equals(sortOrder);
+            queryWrapper.orderBy(true, isAsc, sortField);
+        } else {
+            queryWrapper.orderByDesc("updateTime");
+        }
         Page<MaterialInfo> entityPage = materialInfoMapper.selectPage(
                 new Page<>(query.getCurrent(), query.getPageSize()), queryWrapper);
         Page<MaterialVO> voPage = new Page<>(entityPage.getCurrent(), entityPage.getSize(), entityPage.getTotal());
@@ -54,14 +66,41 @@ public class MaterialServiceImpl implements MaterialService {
             voPage.setRecords(new ArrayList<>());
             return voPage;
         }
+        Set<Long> materialIdSet = records.stream().map(MaterialInfo::getId).collect(Collectors.toSet());
+        Map<Long, Integer> warnThresholdMap = new HashMap<>();
+        if (!materialIdSet.isEmpty()) {
+            QueryWrapper<InventoryInfo> inventoryQueryWrapper = new QueryWrapper<>();
+            inventoryQueryWrapper.in("materialId", materialIdSet);
+            List<InventoryInfo> inventoryInfoList = inventoryInfoMapper.selectList(inventoryQueryWrapper);
+            for (InventoryInfo inventoryInfo : inventoryInfoList) {
+                Long materialId = inventoryInfo.getMaterialId();
+                if (materialId == null) {
+                    continue;
+                }
+                if (!warnThresholdMap.containsKey(materialId) && inventoryInfo.getWarnThreshold() != null) {
+                    warnThresholdMap.put(materialId, inventoryInfo.getWarnThreshold());
+                }
+            }
+        }
         List<MaterialVO> voList = new ArrayList<>();
         for (MaterialInfo materialInfo : records) {
             MaterialVO vo = new MaterialVO();
             BeanUtils.copyProperties(materialInfo, vo);
+            vo.setWarnThreshold(warnThresholdMap.getOrDefault(materialInfo.getId(), 0));
             voList.add(vo);
         }
         voPage.setRecords(voList);
         return voPage;
+    }
+
+    private boolean isValidMaterialSortField(String sortField) {
+        return "id".equals(sortField)
+                || "materialName".equals(sortField)
+                || "category".equals(sortField)
+                || "stockTotal".equals(sortField)
+                || "status".equals(sortField)
+                || "createTime".equals(sortField)
+                || "updateTime".equals(sortField);
     }
 
     @Override
@@ -156,8 +195,17 @@ public class MaterialServiceImpl implements MaterialService {
         if (materialInfo == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND_ERROR, "物资不存在");
         }
+        QueryWrapper<InventoryInfo> inventoryQueryWrapper = new QueryWrapper<>();
+        inventoryQueryWrapper.eq("materialId", id);
+        List<InventoryInfo> inventoryInfoList = inventoryInfoMapper.selectList(inventoryQueryWrapper);
+        Integer warnThreshold = inventoryInfoList.stream()
+                .map(InventoryInfo::getWarnThreshold)
+                .filter(value -> value != null)
+                .findFirst()
+                .orElse(0);
         MaterialVO vo = new MaterialVO();
         BeanUtils.copyProperties(materialInfo, vo);
+        vo.setWarnThreshold(warnThreshold);
         return vo;
     }
 }

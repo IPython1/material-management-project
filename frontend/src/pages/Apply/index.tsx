@@ -3,7 +3,9 @@ import {
   ApplyDetailVO,
   ApplyVO,
   createApplyUsingPost,
+  getDashboardStatUsingGet,
   getApplyDetailUsingGet,
+  listHistoryApplyUsingGet,
   listMyApplyUsingGet,
   listPendingApplyUsingGet,
   rejectApplyUsingPost,
@@ -14,10 +16,11 @@ import {
   PageContainer,
   ProColumns,
   ProFormDigit,
+  ProFormText,
   ProFormTextArea,
   ProTable,
 } from '@ant-design/pro-components';
-import { useModel } from '@umijs/max';
+import { useLocation, useModel } from '@umijs/max';
 import { Button, Descriptions, message, Modal, Space, Tabs, Tag, Timeline, Typography } from 'antd';
 import React, { useMemo, useRef, useState } from 'react';
 
@@ -39,16 +42,51 @@ const toTotal = (value?: string | number) => Number(value ?? 0);
 
 const ApplyPage: React.FC = () => {
   const actionRef = useRef<ActionType>();
-  const { initialState } = useModel('@@initialState');
+  const location = useLocation();
+  const { initialState, setInitialState } = useModel('@@initialState');
   const isAdmin = initialState?.currentUser?.userRole === 'admin';
 
-  const [activeTab, setActiveTab] = useState<string>(isAdmin ? 'pending' : 'my');
+  const getInitialTab = () => {
+    const searchParams = new URLSearchParams(location.search);
+    const tab = searchParams.get('tab');
+    if (isAdmin) {
+      if (tab === 'history') {
+        return 'history';
+      }
+      return 'pending';
+    }
+    if (tab === 'my') {
+      return 'my';
+    }
+    return 'my';
+  };
+
+  const [activeTab, setActiveTab] = useState<string>(getInitialTab);
+  const [tableParams, setTableParams] = useState<Record<string, any>>({});
+  const [hasSearch, setHasSearch] = useState(false);
   const [createVisible, setCreateVisible] = useState(false);
   const [decisionVisible, setDecisionVisible] = useState(false);
   const [decisionType, setDecisionType] = useState<'approve' | 'reject'>('approve');
   const [decisionTarget, setDecisionTarget] = useState<ApplyVO>();
   const [detailVisible, setDetailVisible] = useState(false);
   const [detailData, setDetailData] = useState<ApplyDetailVO>();
+
+  React.useEffect(() => {
+    const searchParams = new URLSearchParams(location.search);
+    const tab = searchParams.get('tab');
+    if (isAdmin) {
+      setActiveTab(tab === 'history' ? 'history' : 'pending');
+    } else if (tab === 'my') {
+      setActiveTab('my');
+    }
+    const status = searchParams.get('status');
+    const hasQueryFilter = status !== null;
+    setTableParams({
+      status: status !== null ? Number(status) : undefined,
+    });
+    setHasSearch(hasQueryFilter);
+    actionRef.current?.reload();
+  }, [location.search, isAdmin]);
 
   const columns = useMemo<ProColumns<ApplyVO>[]>(
     () => [
@@ -60,11 +98,13 @@ const ApplyPage: React.FC = () => {
       {
         title: '物资',
         dataIndex: 'materialName',
+        sorter: true,
       },
       {
         title: '数量',
         dataIndex: 'quantity',
         hideInSearch: true,
+        sorter: true,
       },
       {
         title: '用途',
@@ -90,6 +130,7 @@ const ApplyPage: React.FC = () => {
           2: { text: '已驳回' },
           3: { text: '已出库' },
         },
+        sorter: true,
         render: (_, record) => {
           const status = record.status ?? 0;
           return <Tag color={statusColorMap[status] || 'default'}>{statusTextMap[status] || '-'}</Tag>;
@@ -100,12 +141,14 @@ const ApplyPage: React.FC = () => {
         dataIndex: 'applyTime',
         valueType: 'dateTime',
         hideInSearch: true,
+        sorter: true,
       },
       {
         title: '审批时间',
         dataIndex: 'approveTime',
         valueType: 'dateTime',
         hideInSearch: true,
+        sorter: true,
       },
       {
         title: '操作',
@@ -157,10 +200,19 @@ const ApplyPage: React.FC = () => {
     <PageContainer>
       <Tabs
         activeKey={activeTab}
-        onChange={setActiveTab}
+        onChange={(key) => {
+          setActiveTab(key);
+          setHasSearch(false);
+          setTableParams({});
+          actionRef.current?.reload();
+        }}
         items={[
-          { key: 'my', label: '我的申请' },
-          ...(isAdmin ? [{ key: 'pending', label: '待审批列表' }] : []),
+          ...(isAdmin
+            ? [
+                { key: 'pending', label: '待审批列表' },
+                { key: 'history', label: '过往审批记录' },
+              ]
+            : [{ key: 'my', label: '我的申请' }]),
         ]}
       />
 
@@ -169,8 +221,14 @@ const ApplyPage: React.FC = () => {
         rowKey="id"
         columns={columns}
         search={{ labelWidth: 100 }}
+        onSubmit={() => setHasSearch(true)}
+        onReset={() => {
+          setHasSearch(false);
+          setTableParams({});
+        }}
+        params={tableParams}
         toolBarRender={() =>
-          activeTab === 'my'
+          !isAdmin && activeTab === 'my'
             ? [
                 <Button
                   key="create"
@@ -184,16 +242,27 @@ const ApplyPage: React.FC = () => {
               ]
             : []
         }
-        request={async (params) => {
+        request={async (params, sort) => {
+          const sortField = Object.keys(sort || {})?.[0];
+          const sortOrder = sortField ? sort?.[sortField] : undefined;
+          const status =
+            params.status === undefined || params.status === null || params.status === ''
+              ? undefined
+              : Number(params.status);
           const query = {
             current: params.current,
             pageSize: params.pageSize,
-            status: params.status as unknown as number,
+            status: hasSearch ? status : undefined,
+            approvalNo: hasSearch ? (params.approvalNo as string) : undefined,
+            materialName: hasSearch ? (params.materialName as string) : undefined,
+            sortField,
+            sortOrder,
           };
-          const res =
-            activeTab === 'pending'
-              ? await listPendingApplyUsingGet(query)
-              : await listMyApplyUsingGet(query);
+          const res = isAdmin
+            ? activeTab === 'history'
+              ? await listHistoryApplyUsingGet(query)
+              : await listPendingApplyUsingGet(query)
+            : await listMyApplyUsingGet(query);
           return {
             data: res.data?.records || [],
             success: res.code === 0,
@@ -210,13 +279,18 @@ const ApplyPage: React.FC = () => {
         title="新建申请"
         open={createVisible}
         modalProps={{
-          destroyOnClose: true,
+          destroyOnHidden: true,
           onCancel: () => setCreateVisible(false),
         }}
         onFinish={async (values) => {
           const hide = message.loading('正在提交');
           try {
-            await createApplyUsingPost(values);
+            const payload = {
+              ...values,
+              materialId: Number(values.materialId),
+              quantity: Number(values.quantity),
+            };
+            await createApplyUsingPost(payload);
             hide();
             message.success('提交成功');
             setCreateVisible(false);
@@ -229,11 +303,14 @@ const ApplyPage: React.FC = () => {
           }
         }}
       >
-        <ProFormDigit
+        <ProFormText
           name="materialId"
           label="物资ID"
-          min={1}
-          rules={[{ required: true, message: '请输入物资ID' }]}
+          fieldProps={{ inputMode: 'numeric' }}
+          rules={[
+            { required: true, message: '请输入物资ID' },
+            { pattern: /^\d+$/, message: '物资ID必须是数字' },
+          ]}
         />
         <ProFormDigit
           name="quantity"
@@ -248,7 +325,7 @@ const ApplyPage: React.FC = () => {
         title={decisionType === 'approve' ? '审批通过' : '审批驳回'}
         open={decisionVisible}
         modalProps={{
-          destroyOnClose: true,
+          destroyOnHidden: true,
           onCancel: () => {
             setDecisionVisible(false);
             setDecisionTarget(undefined);
@@ -270,6 +347,15 @@ const ApplyPage: React.FC = () => {
             setDecisionVisible(false);
             setDecisionTarget(undefined);
             actionRef.current?.reload();
+            if (isAdmin) {
+              try {
+                const statRes = await getDashboardStatUsingGet();
+                setInitialState((prev) => ({
+                  ...prev,
+                  pendingApplyCount: statRes.data?.pendingApplyCount ?? 0,
+                }));
+              } catch (_) {}
+            }
             return true;
           } catch (e: any) {
             hide();

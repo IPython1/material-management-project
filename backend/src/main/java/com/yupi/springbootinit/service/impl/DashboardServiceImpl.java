@@ -92,6 +92,18 @@ public class DashboardServiceImpl implements DashboardService {
         Long todayApplyCount = inventoryApprovalMapper.selectCount(todayQuery);
         vo.setTodayApplyCount(todayApplyCount == null ? 0L : todayApplyCount);
 
+        QueryWrapper<InventoryApproval> todayOutQuery = new QueryWrapper<>();
+        todayOutQuery.eq("status", ApprovalConstant.STATUS_OUTBOUND);
+        todayOutQuery.ge("outTime", startDate);
+        todayOutQuery.lt("outTime", endDate);
+        List<InventoryApproval> todayOutList = inventoryApprovalMapper.selectList(todayOutQuery);
+        long todayOutQuantity = todayOutList.stream()
+                .map(InventoryApproval::getQuantity)
+                .filter(value -> value != null && value > 0)
+                .mapToLong(Integer::longValue)
+                .sum();
+        vo.setTodayOutQuantity(todayOutQuantity);
+
         QueryWrapper<InventoryApproval> pendingQuery = new QueryWrapper<>();
         pendingQuery.eq("status", ApprovalConstant.STATUS_PENDING);
         Long pendingApplyCount = inventoryApprovalMapper.selectCount(pendingQuery);
@@ -102,6 +114,14 @@ public class DashboardServiceImpl implements DashboardService {
         warnQuery.eq("handled", WarnConstant.UNHANDLED);
         Long unhandledWarnCount = warnRecordMapper.selectCount(warnQuery);
         vo.setUnhandledWarnCount(unhandledWarnCount == null ? 0L : unhandledWarnCount);
+
+        Date sevenDaysLater = Date.from(today.plusDays(7).atStartOfDay().atZone(ZoneId.systemDefault()).toInstant());
+        QueryWrapper<MaterialInfo> expireQuery = new QueryWrapper<>();
+        expireQuery.isNotNull("expireDate");
+        expireQuery.ge("expireDate", startDate);
+        expireQuery.le("expireDate", sevenDaysLater);
+        Long expiringSoonCount = materialInfoMapper.selectCount(expireQuery);
+        vo.setExpiringSoonCount(expiringSoonCount == null ? 0L : expiringSoonCount);
         return vo;
     }
 

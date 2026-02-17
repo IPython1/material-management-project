@@ -18,6 +18,11 @@ public class ReportFlowQueryRequest extends PageRequest implements Serializable 
     private String materialName;
 
     /**
+     * 流水类型：IN/OUT
+     */
+    private String flowType;
+
+    /**
      * 开始时间（yyyy-MM-dd HH:mm:ss）
      */
     private String startTime;

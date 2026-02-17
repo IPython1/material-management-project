@@ -30,9 +30,19 @@ public class UserQueryRequest extends PageRequest implements Serializable {
     private String mpOpenId;
 
     /**
+     * 用户账号
+     */
+    private String userAccount;
+
+    /**
      * 用户昵称
      */
     private String userName;
+
+    /**
+     * 手机号
+     */
+    private String userPhone;
 
     /**
      * 简介
@@ -43,6 +53,11 @@ public class UserQueryRequest extends PageRequest implements Serializable {
      * 用户角色：user/admin/ban
      */
     private String userRole;
+
+    /**
+     * 账号状态：1启用 0禁用
+     */
+    private Integer userStatus;
 
     private static final long serialVersionUID = 1L;
 }

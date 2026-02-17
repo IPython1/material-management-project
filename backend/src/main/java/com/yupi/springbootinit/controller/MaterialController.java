@@ -40,8 +40,9 @@ public class MaterialController {
      * 物资分页
      */
     @GetMapping("/list")
-    @AuthCheck(mustRole = UserConstant.ADMIN_ROLE)
-    public BaseResponse<Page<MaterialVO>> listMaterial(MaterialQueryRequest materialQueryRequest) {
+    public BaseResponse<Page<MaterialVO>> listMaterial(MaterialQueryRequest materialQueryRequest,
+            HttpServletRequest request) {
+        userService.getLoginUser(request);
         return ResultUtils.success(materialService.listMaterial(materialQueryRequest));
     }
 
@@ -76,8 +77,8 @@ public class MaterialController {
      * 详情
      */
     @GetMapping("/detail")
-    @AuthCheck(mustRole = UserConstant.ADMIN_ROLE)
-    public BaseResponse<MaterialVO> getMaterialDetail(@RequestParam("id") Long id) {
+    public BaseResponse<MaterialVO> getMaterialDetail(@RequestParam("id") Long id, HttpServletRequest request) {
+        userService.getLoginUser(request);
         return ResultUtils.success(materialService.getMaterialDetail(id));
     }
 }

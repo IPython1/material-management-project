@@ -13,7 +13,9 @@ import com.yupi.springbootinit.exception.ThrowUtils;
 import com.yupi.springbootinit.model.dto.user.UserAddRequest;
 import com.yupi.springbootinit.model.dto.user.UserLoginRequest;
 import com.yupi.springbootinit.model.dto.user.UserQueryRequest;
+import com.yupi.springbootinit.model.dto.user.UserRoleAssignRequest;
 import com.yupi.springbootinit.model.dto.user.UserRegisterRequest;
+import com.yupi.springbootinit.model.dto.user.UserStatusUpdateRequest;
 import com.yupi.springbootinit.model.dto.user.UserUpdateMyRequest;
 import com.yupi.springbootinit.model.dto.user.UserUpdateRequest;
 import com.yupi.springbootinit.model.entity.User;
@@ -34,7 +36,9 @@ import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.BeanUtils;
 import org.springframework.util.DigestUtils;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -176,6 +180,12 @@ public class UserController {
         String defaultPassword = "12345678";
         String encryptPassword = DigestUtils.md5DigestAsHex((SALT + defaultPassword).getBytes());
         user.setUserPassword(encryptPassword);
+        if (StringUtils.isBlank(user.getUserRole())) {
+            user.setUserRole(UserConstant.DEFAULT_ROLE);
+        }
+        if (user.getUserStatus() == null) {
+            user.setUserStatus(1);
+        }
         boolean result = userService.save(user);
         ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
         return ResultUtils.success(user.getId());
@@ -215,6 +225,71 @@ public class UserController {
         User user = new User();
         BeanUtils.copyProperties(userUpdateRequest, user);
         boolean result = userService.updateById(user);
+        ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
+        return ResultUtils.success(true);
+    }
+
+    /**
+     * 设置账号状态（管理员）
+     */
+    @PutMapping("/{id}/status")
+    @AuthCheck(mustRole = UserConstant.ADMIN_ROLE)
+    public BaseResponse<Boolean> updateUserStatus(@PathVariable("id") Long id,
+            @RequestBody UserStatusUpdateRequest userStatusUpdateRequest) {
+        if (id == null || id <= 0 || userStatusUpdateRequest == null || userStatusUpdateRequest.getUserStatus() == null) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR);
+        }
+        Integer userStatus = userStatusUpdateRequest.getUserStatus();
+        if (userStatus != 0 && userStatus != 1) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "状态仅支持 0/1");
+        }
+        User updateUser = new User();
+        updateUser.setId(id);
+        updateUser.setUserStatus(userStatus);
+        boolean result = userService.updateById(updateUser);
+        ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
+        return ResultUtils.success(true);
+    }
+
+    /**
+     * 重置密码（管理员）
+     */
+    @PostMapping("/{id}/resetPwd")
+    @AuthCheck(mustRole = UserConstant.ADMIN_ROLE)
+    public BaseResponse<Boolean> resetUserPassword(@PathVariable("id") Long id) {
+        if (id == null || id <= 0) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR);
+        }
+        User oldUser = userService.getById(id);
+        ThrowUtils.throwIf(oldUser == null, ErrorCode.NOT_FOUND_ERROR);
+        String defaultPassword = "12345678";
+        String encryptPassword = DigestUtils.md5DigestAsHex((SALT + defaultPassword).getBytes());
+        User updateUser = new User();
+        updateUser.setId(id);
+        updateUser.setUserPassword(encryptPassword);
+        boolean result = userService.updateById(updateUser);
+        ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
+        return ResultUtils.success(true);
+    }
+
+    /**
+     * 分配角色（管理员）
+     */
+    @PutMapping("/{id}/role")
+    @AuthCheck(mustRole = UserConstant.ADMIN_ROLE)
+    public BaseResponse<Boolean> assignUserRole(@PathVariable("id") Long id,
+            @RequestBody UserRoleAssignRequest userRoleAssignRequest) {
+        if (id == null || id <= 0 || userRoleAssignRequest == null || StringUtils.isBlank(userRoleAssignRequest.getUserRole())) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR);
+        }
+        String userRole = userRoleAssignRequest.getUserRole();
+        if (!UserConstant.DEFAULT_ROLE.equals(userRole) && !UserConstant.ADMIN_ROLE.equals(userRole)) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "仅支持分配 user/admin 角色");
+        }
+        User updateUser = new User();
+        updateUser.setId(id);
+        updateUser.setUserRole(userRole);
+        boolean result = userService.updateById(updateUser);
         ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
         return ResultUtils.success(true);
     }

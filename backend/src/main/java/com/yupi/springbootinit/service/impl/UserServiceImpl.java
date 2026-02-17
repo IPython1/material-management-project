@@ -72,6 +72,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
             User user = new User();
             user.setUserAccount(userAccount);
             user.setUserPassword(encryptPassword);
+            user.setUserStatus(1);
             boolean saveResult = this.save(user);
             if (!saveResult) {
                 throw new BusinessException(ErrorCode.SYSTEM_ERROR, "注册失败，数据库错误");
@@ -104,6 +105,10 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
             log.info("user login failed, userAccount cannot match userPassword");
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "用户不存在或密码错误");
         }
+        if (UserRoleEnum.BAN.getValue().equals(user.getUserRole())
+                || (user.getUserStatus() != null && user.getUserStatus() == 0)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN_ERROR, "账号已被禁用");
+        }
         // 3. 记录用户的登录态
         request.getSession().setAttribute(USER_LOGIN_STATE, user);
         return this.getLoginUserVO(user);
@@ -123,6 +128,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
             if (user != null && UserRoleEnum.BAN.getValue().equals(user.getUserRole())) {
                 throw new BusinessException(ErrorCode.FORBIDDEN_ERROR, "该用户已被封，禁止登录");
             }
+            if (user != null && user.getUserStatus() != null && user.getUserStatus() == 0) {
+                throw new BusinessException(ErrorCode.FORBIDDEN_ERROR, "该账号已被禁用");
+            }
             // 用户不存在则创建
             if (user == null) {
                 user = new User();
@@ -130,6 +138,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
                 user.setMpOpenId(mpOpenId);
                 user.setUserAvatar(wxOAuth2UserInfo.getHeadImgUrl());
                 user.setUserName(wxOAuth2UserInfo.getNickname());
+                user.setUserStatus(1);
                 boolean result = this.save(user);
                 if (!result) {
                     throw new BusinessException(ErrorCode.SYSTEM_ERROR, "登录失败");
@@ -253,16 +262,22 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         Long id = userQueryRequest.getId();
         String unionId = userQueryRequest.getUnionId();
         String mpOpenId = userQueryRequest.getMpOpenId();
+        String userAccount = userQueryRequest.getUserAccount();
         String userName = userQueryRequest.getUserName();
+        String userPhone = userQueryRequest.getUserPhone();
         String userProfile = userQueryRequest.getUserProfile();
         String userRole = userQueryRequest.getUserRole();
+        Integer userStatus = userQueryRequest.getUserStatus();
         String sortField = userQueryRequest.getSortField();
         String sortOrder = userQueryRequest.getSortOrder();
         QueryWrapper<User> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq(id != null, "id", id);
         queryWrapper.eq(StringUtils.isNotBlank(unionId), "unionId", unionId);
         queryWrapper.eq(StringUtils.isNotBlank(mpOpenId), "mpOpenId", mpOpenId);
+        queryWrapper.like(StringUtils.isNotBlank(userAccount), "userAccount", userAccount);
         queryWrapper.eq(StringUtils.isNotBlank(userRole), "userRole", userRole);
+        queryWrapper.like(StringUtils.isNotBlank(userPhone), "userPhone", userPhone);
+        queryWrapper.eq(userStatus != null, "userStatus", userStatus);
         queryWrapper.like(StringUtils.isNotBlank(userProfile), "userProfile", userProfile);
         queryWrapper.like(StringUtils.isNotBlank(userName), "userName", userName);
         queryWrapper.orderBy(SqlUtils.validSortField(sortField), sortOrder.equals(CommonConstant.SORT_ORDER_ASC),
