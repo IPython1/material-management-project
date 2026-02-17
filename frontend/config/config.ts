@@ -4,7 +4,9 @@ import { join } from 'path';
 import defaultSettings from './defaultSettings';
 import proxy from './proxy';
 import routes from './routes';
+
 const { REACT_APP_ENV = 'dev' } = process.env;
+
 export default defineConfig({
   /**
    * @name 开启 hash 模式
@@ -133,8 +135,8 @@ export default defineConfig({
       projectName: 'backend',
     },
   ],
-  mfsu: {
-    strategy: 'normal',
-  },
+  // 为了兼容 @ant-design/plots 及其 d3 相关依赖在 Module Federation 下的运行时问题，
+  // 这里暂时关闭 mfsu，如需再次开启可将 mfsu 改回对象配置。
+  mfsu: false,
   requestRecord: {},
 });
